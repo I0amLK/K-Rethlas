@@ -1,0 +1,11 @@
+{
+  "schema_version": "1.0",
+  "default": "deny",
+  "max_model_concurrency": 3,
+  "nested_agents": false,
+  "network": "disabled",
+  "rules": [
+    {"role": "generation", "action": "verify", "domains": ["fixture"]},
+    {"role": "generation", "action": "status", "domains": ["fixture"]}
+  ]
+}

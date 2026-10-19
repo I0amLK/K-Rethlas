@@ -1,0 +1,174 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "FixtureContextProtocol",
+  "description": "Bounded controller-owned branch and view contracts, never mathematical review or shared-source publication.",
+  "$defs": {
+    "hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "id": {"type": "string", "minLength": 1, "maxLength": 4096, "pattern": "\\S"},
+    "scope": {"type": "string", "pattern": "^(?!\\.{1,2}$)[A-Za-z0-9_.-]{1,128}$"},
+    "ref": {
+      "type": "object", "additionalProperties": false,
+      "required": ["entity_id", "revision_id", "body_sha256"],
+      "properties": {"entity_id": {"$ref": "#/$defs/id"}, "revision_id": {"$ref": "#/$defs/id"}, "body_sha256": {"$ref": "#/$defs/hash"}}
+    },
+    "refs": {"type": "array", "maxItems": 256, "uniqueItems": true, "items": {"$ref": "#/$defs/ref"}},
+    "endpoint": {
+      "type": "object", "additionalProperties": false, "required": ["entity_id", "revision_id"],
+      "properties": {"entity_id": {"$ref": "#/$defs/id"}, "revision_id": {"$ref": "#/$defs/id"}}
+    },
+    "active": {"type": "array", "maxItems": 256, "uniqueItems": true, "items": {"$ref": "#/$defs/endpoint"}},
+    "source": {
+      "type": "object", "additionalProperties": false, "required": ["store_id", "config_sha256", "head"],
+      "properties": {"store_id": {"$ref": "#/$defs/hash"}, "config_sha256": {"$ref": "#/$defs/hash"}, "head": {"$ref": "#/$defs/hash"}}
+    },
+    "capture": {
+      "type": "object", "additionalProperties": false,
+      "required": ["version", "request_id", "owner", "domain", "source", "public", "base_active", "branches"],
+      "properties": {
+        "version": {"const": "context-1"}, "request_id": {"$ref": "#/$defs/id"}, "owner": {"$ref": "#/$defs/scope"},
+        "domain": {"const": "fixture"}, "source": {"$ref": "#/$defs/source"}, "public": {"$ref": "#/$defs/refs"},
+        "base_active": {"$ref": "#/$defs/active"},
+        "branches": {"type": "array", "minItems": 1, "maxItems": 4, "uniqueItems": true, "items": {"$ref": "#/$defs/scope"}}
+      }
+    },
+    "seal_request": {
+      "type": "object", "additionalProperties": false, "required": ["version", "request_id", "expected_head", "active"],
+      "properties": {"version": {"const": "context-1"}, "request_id": {"$ref": "#/$defs/id"},
+        "expected_head": {"$ref": "#/$defs/hash"}, "active": {"$ref": "#/$defs/active"}}
+    },
+    "selection": {
+      "type": "object", "additionalProperties": false, "required": ["choices", "historical"],
+      "properties": {
+        "choices": {"type": "array", "maxItems": 1024, "uniqueItems": true, "items": {
+          "type": "object", "additionalProperties": false, "required": ["entity_id", "revision_id"],
+          "properties": {"entity_id": {"$ref": "#/$defs/id"}, "revision_id": {"oneOf": [{"$ref": "#/$defs/id"}, {"type": "null"}]}}
+        }},
+        "historical": {"$ref": "#/$defs/refs"}
+      }
+    },
+    "join_request": {
+      "type": "object", "additionalProperties": false,
+      "required": ["version", "request_id", "snapshot_sha256", "selection"],
+      "properties": {"version": {"const": "context-1"}, "request_id": {"$ref": "#/$defs/id"},
+        "snapshot_sha256": {"$ref": "#/$defs/hash"}, "selection": {"$ref": "#/$defs/selection"}}
+    },
+    "proof_manifest": {
+      "type": "object", "additionalProperties": false,
+      "required": ["version", "request_id", "workspace_id", "snapshot_sha256", "join_sha256", "policy_version", "roots", "dependencies", "references"],
+      "properties": {
+        "version": {"const": "context-1"}, "request_id": {"$ref": "#/$defs/id"},
+        "workspace_id": {"$ref": "#/$defs/hash"}, "snapshot_sha256": {"$ref": "#/$defs/hash"}, "join_sha256": {"$ref": "#/$defs/hash"},
+        "policy_version": {"const": "minimal-math-1"},
+        "roots": {"type": "object", "additionalProperties": false, "required": ["problem", "claim", "proof"],
+          "properties": {"problem": {"$ref": "#/$defs/ref"}, "claim": {"$ref": "#/$defs/ref"}, "proof": {"$ref": "#/$defs/ref"}}},
+        "dependencies": {"$ref": "#/$defs/refs"}, "references": {"$ref": "#/$defs/refs"}
+      }
+    },
+    "dto_revision": {
+      "type": "object", "additionalProperties": false,
+      "required": ["entity_id", "revision_id", "body_sha256", "type", "body", "context_revision_ids", "assertion_state", "validity"],
+      "properties": {
+        "entity_id": {"$ref": "#/$defs/id"}, "revision_id": {"$ref": "#/$defs/id"}, "body_sha256": {"$ref": "#/$defs/hash"},
+        "type": {"enum": ["Problem", "Claim", "ProofArtifact", "DefinitionContext", "Assumption", "Reference"]},
+        "body": {"type": "string", "minLength": 1, "maxLength": 131072},
+        "context_revision_ids": {"type": "array", "maxItems": 256, "uniqueItems": true, "items": {"$ref": "#/$defs/id"}},
+        "assertion_state": {"const": "candidate"}, "validity": {"const": "needs_review"}
+      }
+    },
+    "dto_relation": {
+      "type": "object", "additionalProperties": false,
+      "required": ["relation_id", "type", "source", "target", "context_revision_ids", "assertion_state"],
+      "properties": {
+        "relation_id": {"$ref": "#/$defs/id"}, "type": {"enum": ["in_context", "assumes", "depends_on", "cites", "attempts_to_prove"]},
+        "source": {"$ref": "#/$defs/endpoint"}, "target": {"$ref": "#/$defs/endpoint"},
+        "context_revision_ids": {"type": "array", "maxItems": 256, "uniqueItems": true, "items": {"$ref": "#/$defs/id"}},
+        "assertion_state": {"const": "candidate"}
+      }
+    },
+    "dto": {
+      "type": "object", "additionalProperties": false,
+      "required": ["version", "policy_version", "manifest_sha256", "roots", "revisions", "relations"],
+      "properties": {
+        "version": {"const": "context-dto-1"}, "policy_version": {"const": "minimal-math-1"}, "manifest_sha256": {"$ref": "#/$defs/hash"},
+        "roots": {"type": "object", "additionalProperties": false, "required": ["problem", "claim", "proof"],
+          "properties": {"problem": {"$ref": "#/$defs/ref"}, "claim": {"$ref": "#/$defs/ref"}, "proof": {"$ref": "#/$defs/ref"}}},
+        "revisions": {"type": "array", "minItems": 3, "maxItems": 256, "items": {"$ref": "#/$defs/dto_revision"}},
+        "relations": {"type": "array", "maxItems": 1024, "items": {"$ref": "#/$defs/dto_relation"}}
+      }
+    },
+    "branch": {
+      "type": "object", "additionalProperties": false, "required": ["branch_id", "run_id", "store_id", "config_sha256", "seed_head"],
+      "properties": {"branch_id": {"$ref": "#/$defs/scope"}, "run_id": {"$ref": "#/$defs/scope"}, "store_id": {"$ref": "#/$defs/hash"},
+        "config_sha256": {"$ref": "#/$defs/hash"}, "seed_head": {"$ref": "#/$defs/hash"}}
+    },
+    "workspace": {
+      "type": "object", "additionalProperties": false,
+      "required": ["version", "workspace_id", "capture", "snapshot_sha256", "branches", "join_run_id", "view_run_id"],
+      "properties": {"version": {"const": "context-1"}, "workspace_id": {"$ref": "#/$defs/hash"}, "capture": {"$ref": "#/$defs/capture"},
+        "snapshot_sha256": {"$ref": "#/$defs/hash"}, "branches": {"type": "array", "minItems": 1, "maxItems": 4, "items": {"$ref": "#/$defs/branch"}},
+        "join_run_id": {"$ref": "#/$defs/scope"}, "view_run_id": {"$ref": "#/$defs/scope"}}
+    },
+    "seal_intent": {
+      "type": "object", "additionalProperties": false,
+      "required": ["version", "workspace_id", "branch", "snapshot_sha256", "request"],
+      "properties": {"version": {"const": "context-1"}, "workspace_id": {"$ref": "#/$defs/hash"}, "branch": {"$ref": "#/$defs/branch"},
+        "snapshot_sha256": {"$ref": "#/$defs/hash"}, "request": {"$ref": "#/$defs/seal_request"}}
+    },
+    "seal_receipt": {
+      "type": "object", "additionalProperties": false,
+      "required": ["version", "intent_sha256", "head", "run_id", "closed_epoch"],
+      "properties": {"version": {"const": "context-1"}, "intent_sha256": {"$ref": "#/$defs/hash"}, "head": {"$ref": "#/$defs/hash"},
+        "run_id": {"$ref": "#/$defs/scope"}, "closed_epoch": {"type": "integer", "minimum": 0}}
+    },
+    "graph": {
+      "type": "object", "additionalProperties": false, "required": ["schema_version", "entities", "revisions", "relations", "evidence"],
+      "properties": {
+        "schema_version": {"const": "1.0"},
+        "entities": {"type": "array", "maxItems": 1024, "items": {"type": "object"}},
+        "revisions": {"type": "array", "maxItems": 256, "items": {"type": "object"}},
+        "relations": {"type": "array", "maxItems": 1024, "items": {"type": "object"}},
+        "evidence": {"type": "array", "maxItems": 1024, "items": {"type": "object"}}
+      }
+    },
+    "snapshot": {
+      "type": "object", "additionalProperties": false, "required": ["version", "source", "public", "base_active", "graph"],
+      "properties": {"version": {"const": "context-1"}, "source": {"$ref": "#/$defs/source"}, "public": {"$ref": "#/$defs/refs"},
+        "base_active": {"$ref": "#/$defs/active"}, "graph": {"$ref": "#/$defs/graph"}}
+    },
+    "commit_request": {
+      "type": "object", "additionalProperties": false, "required": ["version", "request_id", "expected_head", "entities", "revisions", "relations", "evidence"],
+      "properties": {"version": {"const": 1}, "request_id": {"$ref": "#/$defs/id"}, "expected_head": {"$ref": "#/$defs/hash"},
+        "entities": {"type": "array", "maxItems": 1024, "items": {"type": "object"}},
+        "revisions": {"type": "array", "maxItems": 256, "items": {"type": "object"}},
+        "relations": {"type": "array", "maxItems": 1024, "items": {"type": "object"}},
+        "evidence": {"type": "array", "maxItems": 1024, "items": {"type": "object"}}}
+    },
+    "join_binding": {
+      "type": "object", "additionalProperties": false,
+      "required": ["version", "workspace_id", "workspace_config_sha256", "source", "snapshot_sha256", "seals", "request_sha256", "graph_sha256"],
+      "properties": {"version": {"const": "context-1"}, "workspace_id": {"$ref": "#/$defs/hash"},
+        "workspace_config_sha256": {"$ref": "#/$defs/hash"}, "source": {"$ref": "#/$defs/source"}, "snapshot_sha256": {"$ref": "#/$defs/hash"},
+        "request_sha256": {"$ref": "#/$defs/hash"}, "graph_sha256": {"$ref": "#/$defs/hash"},
+        "seals": {"type": "array", "minItems": 1, "maxItems": 4, "uniqueItems": true, "items": {
+          "type": "object", "additionalProperties": false, "required": ["branch_id", "head", "seal_sha256"],
+          "properties": {"branch_id": {"$ref": "#/$defs/scope"}, "head": {"$ref": "#/$defs/hash"}, "seal_sha256": {"$ref": "#/$defs/hash"}}
+        }}}
+    },
+    "join": {
+      "type": "object", "additionalProperties": false, "required": ["version", "request", "binding", "graph", "commit_request"],
+      "properties": {"version": {"const": "context-1"}, "request": {"$ref": "#/$defs/join_request"}, "binding": {"$ref": "#/$defs/join_binding"},
+        "graph": {"$ref": "#/$defs/graph"}, "commit_request": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/commit_request"}]}}
+    },
+    "view": {
+      "type": "object", "additionalProperties": false, "required": ["version", "manifest", "dto", "dto_sha256"],
+      "properties": {"version": {"const": "context-1"}, "manifest": {"$ref": "#/$defs/proof_manifest"},
+        "dto": {"$ref": "#/$defs/dto"}, "dto_sha256": {"$ref": "#/$defs/hash"}}
+    },
+    "state": {
+      "type": "object", "additionalProperties": false, "required": ["version", "workspace_id", "counts"],
+      "properties": {"version": {"const": "context-1"}, "workspace_id": {"$ref": "#/$defs/hash"},
+        "counts": {"type": "object", "maxProperties": 64, "propertyNames": {"pattern": "^[A-Za-z0-9_.-]{1,160}$"},
+          "additionalProperties": {"type": "integer", "minimum": 0, "maximum": 256}}}
+    }
+  }
+}

@@ -1,9 +1,19 @@
-model = "gpt-5.6-sol"
+model = "xiaoliu/gpt-6.1-sol"
 model_reasoning_effort = "max"
 personality = "pragmatic"
+web_search = "disabled"
+sandbox_mode = "read-only"
+approval_policy = "on-request"
+
+[features]
+multi_agent = false
+
+[agents]
+max_threads = 1
+max_depth = 1
 
 [notice]
-hide_full_access_warning = true
+hide_full_access_warning = false
 
 [notice.model_migrations]
 "gpt-5.2-codex" = "gpt-5.3-codex"
@@ -15,6 +25,6 @@ hide_full_access_warning = true
 # verification-agent-mcp
 [mcp_servers.verification_agent]
 command = "python3"
-args = ["./mcp/server.py"]
+args = ["-I", "./mcp/server.py"]
 cwd = "./"
 tool_timeout_sec = 3600

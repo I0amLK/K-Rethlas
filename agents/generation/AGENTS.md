@@ -1,13 +1,19 @@
 # Math Reasoning Agent
 
-This agent solves research-level math problems by following a mathematician-style iterative process. The primary control logic lives in this file and in the skill `SKILL.md` files under `.agents/skills/`.
+This agent solves research-level math problems by following a mathematician-style iterative process. This file describes mathematical workflow, not an authorization mechanism. Trusted controller policy and operating-system isolation take precedence.
+
+## Current Runtime Boundary (M1)
+
+Live Codex execution is unavailable until an isolated provider broker is implemented. Do not bypass this gate, launch an unmanaged replacement, issue capabilities, or access the controller's private roots. External search is disabled unless a future trusted controller explicitly authorizes the provider, payload, run, and budget. No nested agents are enabled in M1; the workspace ceiling remains three model tasks including its main session. Config limits are guardrails, not proof of execution isolation.
+
+A fixture verdict is a protocol test, never a mathematical review. Only a future controller-validated production receipt may establish LLM-reviewed completion; it is still not formal proof.
 
 ## Objective
 
-Given the markdown filepath of a math problem, read that file and produce a verified markdown proof blueprint at:
+Given an approved material snapshot, produce a candidate markdown proof blueprint:
 
 - working draft: `results/{problem_id}/blueprint.md`
-- verified proof: `results/{problem_id}/blueprint_verified.md`
+- historical `blueprint_verified.md` files are unreviewed without a valid controller receipt; never create or rename a file to promote its trust.
 
 Here `problem_id` is the markdown filepath relative to `data/`, without the trailing `.md`. It preserves any category directories. For example:
 
@@ -117,7 +123,7 @@ Do not decide a fixed order of skill usage before tackling the problem. Choose s
 - Use `$recursive-proving` when:
   - all current decomposition plans have been attempted with `$direct-proving`
   - none of them fully solved the problem
-  - you have identified key stuck points for each plan and want one sub-agent to work on each plan in parallel
+  - you have identified key stuck points for each plan and want to revisit plans sequentially (M1 does not permit nested agents)
 - Use `$identify-key-failures` when:
   - all current decomposition plans have failed with `$direct-proving`
   - recursive attempts on the current decomposition plans all failed
@@ -161,7 +167,7 @@ If all current decomposition plans fail under `$direct-proving`, or if a family 
 
 ### Step 4: Stopping rules
 
-Stop only when the blueprint passes verification and the verified markdown proof has been published as `blueprint_verified.md`.
+Stop on a controller budget, cancellation, pause, unavailable-backend, or authorization boundary and preserve partial work. Claim successful completion only from a controller-validated, current-input production receipt. A file, model verdict, or fixture receipt cannot establish this status.
 
 ## Hard Invariants
 
@@ -192,8 +198,8 @@ Use these tools when relevant:
 - `branch_update`
 - `verify_proof_service`
 
-Always call `search_arxiv_theorems` for nontrivial subgoals and key claims to ground reasoning in related literature.
-Use web search early to gather background (terminology, standard lemmas, common techniques) and throughout when constructing examples/counterexamples or proving subgoals.
+When external access is authorized, use `search_arxiv_theorems` for nontrivial subgoals and key claims to ground reasoning in related literature.
+Use web search only through an authorized trusted egress path; lack of access is not permission to open another network channel.
 Prefer `$search-math-results` to orchestrate this retrieval flow: use `search_arxiv_theorems` first, then fall back to the built-in web search when the theorem search is not useful.
 If `$search-math-results` identifies a useful paper, download it inside the current working directory, extract its text, and read the extracted text before using the paper in reasoning or proof writing.
 If `$search-math-results` identifies a useful theorem, read the proof of that theorem as well and extract any techniques or ideas that may help with the current statement.
@@ -201,7 +207,7 @@ When considering an external theorem from a paper, expand the definitions and co
 If extensive retrieval still does not yield useful support, stop relying on search and continue the proof attempt through deep independent reasoning and the other provided skills.
 Use `verify_proof_service` for proof verification instead of relying on model-only checking.
 Only call `verify_proof_service` when a full proof of the whole problem has been assembled in `blueprint.md`. Do not call it on partial proofs, incomplete branches, isolated lemmas, or drafts that have made no real progress on the full theorem.
-When calling `verify_proof_service`, always use a large timeout of `3600` seconds.
+The controller sets finite request and run deadlines. Do not extend them or use retries to bypass an exhausted budget. M1's local protocol request is bounded to at most 30 seconds.
 
 ## Output Contract
 
@@ -217,7 +223,7 @@ put the statement here
 put the proof of this statement here
 ```
 
-The main theorem should be written at the end. After the proof passes verification, rename the file to `results/{problem_id}/blueprint_verified.md`.
+The main theorem should be written at the end. Submit the unchanged candidate and retain its complete version-bound response, envelope, and receipt. Only the trusted controller can publish frozen bytes; never rename a draft to declare it reviewed.
 
 For the final target theorem section, `## statement` must be the original complete statement from the input markdown problem file written in full.
 

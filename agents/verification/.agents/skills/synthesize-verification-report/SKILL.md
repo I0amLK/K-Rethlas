@@ -27,8 +27,10 @@ Each issue must include `location` and `issue`.
    - `correct` iff `critical_errors=[]` and `gaps=[]`.
    - otherwise `wrong`.
 4. If verdict is `wrong`, produce concrete non-empty `repair_hints`.
-5. Validate the output via `validate_verification_output`.
-6. Persist output via `write_verification_output`.
+5. Validate the output via the shared `validate_verification_output` contract. A legitimate `wrong` report remains a valid business result.
+6. Persist a **candidate** via `write_verification_output`; it is not a publication receipt.
+7. The trusted controller independently compares all accepted, privately registered findings, exact frozen input revisions and review configuration. Deleting a worker JSONL file cannot unregister a finding. This protects coverage of received findings, not discovery of every mathematical error.
+8. Never issue a capability or receipt from model-side MCP. Fixture output is only a protocol test; live LLM review is unavailable in M1 until its isolated broker exists.
 
 ## Output Contract
 

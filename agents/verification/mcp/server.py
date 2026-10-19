@@ -6,15 +6,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
-import requests
+from rethlas_core.private_fs import strict_json_loads
+from rethlas_core.verification import (
+    coverage_errors,
+    normalize_findings,
+    validate_verification_output,
+)
 
 try:
-    from jsonschema import Draft202012Validator
-except ImportError:  # pragma: no cover - dependency managed by requirements
-    Draft202012Validator = None  # type: ignore[assignment]
-
-try:
-    from fastmcp import FastMCP
+    from mcp.server.fastmcp import FastMCP
 except ImportError:  # pragma: no cover - dependency managed by requirements
     FastMCP = None  # type: ignore[assignment]
 
@@ -22,7 +22,6 @@ except ImportError:  # pragma: no cover - dependency managed by requirements
 REPO_ROOT = Path(__file__).resolve().parents[1]
 MEMORY_ROOT = REPO_ROOT / "memory"
 RESULTS_ROOT = REPO_ROOT / "results"
-SCHEMA_PATH = REPO_ROOT / "schemas" / "verification_output.schema.json"
 
 THEOREM_SEARCH_URL = "https://leansearch.net/thm/search"
 THEOREM_SEARCH_TASK = (
@@ -75,12 +74,10 @@ def _iter_jsonl(path: Path) -> Iterable[Dict[str, Any]]:
             line = line.strip()
             if not line:
                 continue
-            try:
-                payload = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if isinstance(payload, dict):
-                yield payload
+            payload = strict_json_loads(line)
+            if not isinstance(payload, dict):
+                raise ValueError("verification JSONL entries must be objects")
+            yield payload
 
 
 def search_arxiv_theorems(
@@ -89,42 +86,9 @@ def search_arxiv_theorems(
     endpoint: str = THEOREM_SEARCH_URL,
     timeout_seconds: int = 30,
 ) -> Dict[str, Any]:
-    if not query.strip():
-        raise ValueError("query must be non-empty")
-    if num_results <= 0:
-        raise ValueError("num_results must be > 0")
-
-    payload = {
-        "query": query,
-        "task": THEOREM_SEARCH_TASK,
-        "num_results": num_results,
-    }
-
-    response = requests.post(endpoint, json=payload, timeout=timeout_seconds)
-    response.raise_for_status()
-    data = response.json()
-    if not isinstance(data, list):
-        raise ValueError("The theorem endpoint must return a JSON list")
-
-    normalized: List[Dict[str, str]] = []
-    for item in data:
-        if not isinstance(item, dict):
-            continue
-        normalized.append(
-            {
-                "title": str(item.get("title", "")),
-                "theorem": str(item.get("theorem", "")),
-                "arxiv_id": str(item.get("arxiv_id", "")),
-                "theorem_id": str(item.get("theorem_id", "")),
-            }
-        )
-
-    return {
-        "query": query,
-        "count": len(normalized),
-        "results": normalized,
-        "endpoint": endpoint,
-    }
+    raise PermissionError(
+        "External theorem search is disabled until a trusted, run-bound egress broker is configured"
+    )
 
 
 def memory_init(run_id: str, meta: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -238,74 +202,23 @@ def memory_query(
     }
 
 
-def _load_schema() -> Dict[str, Any]:
-    if not SCHEMA_PATH.exists():
-        raise FileNotFoundError(f"Schema not found: {SCHEMA_PATH}")
-    with SCHEMA_PATH.open("r", encoding="utf-8") as handle:
-        schema = json.load(handle)
-    if not isinstance(schema, dict):
-        raise ValueError("schema must be a JSON object")
-    return schema
-
-
-def validate_verification_output(payload: Dict[str, Any]) -> Dict[str, Any]:
-    errors: List[str] = []
-
-    try:
-        schema = _load_schema()
-    except Exception as exc:
-        return {"valid": False, "errors": [f"schema load failed: {exc}"]}
-
-    if Draft202012Validator is None:
-        errors.append("jsonschema dependency is missing; cannot validate schema")
-    else:
-        validator = Draft202012Validator(schema)
-        for error in validator.iter_errors(payload):
-            path = ".".join(str(part) for part in error.path)
-            if path:
-                errors.append(f"schema error at '{path}': {error.message}")
-            else:
-                errors.append(f"schema error: {error.message}")
-
-    report = payload.get("verification_report")
-    verdict = payload.get("verdict")
-    repair_hints = payload.get("repair_hints")
-
-    critical_errors = []
-    gaps = []
-    if isinstance(report, dict):
-        if isinstance(report.get("critical_errors"), list):
-            critical_errors = report["critical_errors"]
-        if isinstance(report.get("gaps"), list):
-            gaps = report["gaps"]
-
-    has_any_finding = len(critical_errors) + len(gaps) > 0
-
-    if verdict == "correct":
-        if has_any_finding:
-            errors.append("verdict='correct' is invalid when critical_errors or gaps are non-empty")
-        if repair_hints != "":
-            errors.append("repair_hints must be empty when verdict='correct'")
-    elif verdict == "wrong":
-        if not has_any_finding:
-            errors.append("verdict='wrong' requires at least one critical error or gap")
-        if not isinstance(repair_hints, str) or not repair_hints.strip():
-            errors.append("repair_hints must be non-empty when verdict='wrong'")
-    else:
-        errors.append("verdict must be 'correct' or 'wrong'")
-
-    return {"valid": len(errors) == 0, "errors": errors}
-
-
 def write_verification_output(run_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
     validation = validate_verification_output(payload)
     if not validation["valid"]:
         raise ValueError("verification output validation failed: " + "; ".join(validation["errors"]))
 
+    # This worker-side file is a candidate, not a trusted receipt. The controller
+    # independently validates its private, append-only registered findings.
+    registered = []
+    for channel in ("statement_checks", "reference_checks"):
+        registered.extend(_iter_jsonl(_channel_path(run_id, channel)))
+    errors = coverage_errors(payload, normalize_findings(registered))
+    if errors:
+        raise ValueError("verification output omits locally recorded findings")
     resolved_run_id = sanitize_run_id(run_id)
     output_dir = RESULTS_ROOT / resolved_run_id
     output_dir.mkdir(parents=True, exist_ok=True)
-    output_path = output_dir / "verification.json"
+    output_path = output_dir / "verification.candidate.json"
 
     with output_path.open("w", encoding="utf-8") as handle:
         json.dump(payload, handle, indent=2, ensure_ascii=False)
@@ -322,13 +235,19 @@ def write_verification_output(run_id: str, payload: Dict[str, Any]) -> Dict[str,
     )
 
     return {
-        "status": "ok",
+        "status": "candidate_written",
+        "production_completed": False,
         "run_id": resolved_run_id,
         "output_path": str(output_path),
     }
 
 
-def build_mcp_app() -> Optional[Any]:
+def build_mcp_app(managed_config: Optional[Path] = None) -> Optional[Any]:
+    if managed_config is not None:
+        from rethlas_core.project_mcp import build_mcp_app as managed_app
+        return managed_app(managed_config)
+    from rethlas_core.mcp_gate import require_managed_worker
+    require_managed_worker()
     if FastMCP is None:
         return None
 
@@ -375,15 +294,26 @@ def build_mcp_app() -> Optional[Any]:
     return app
 
 
-APP = build_mcp_app()
-
-
-def main() -> None:
-    if APP is None:
-        raise SystemExit(
-            "fastmcp is not installed. Install dependencies from mcp/requirements.txt first."
-        )
-    APP.run()
+def main(argv=None) -> None:
+    from rethlas_core.project_mcp import _Parser
+    from rethlas_core.private_fs import canonical_json
+    import sys
+    try:
+        parser = _Parser(prog="rethlas-verification-mcp")
+        parser.add_argument("--managed-config", type=Path)
+        args = parser.parse_args(argv)
+    except Exception as exc:
+        print(canonical_json({"status": "rejected", "error": type(exc).__name__}).decode(), file=sys.stderr)
+        raise SystemExit(2) from None
+    if args.managed_config is not None:
+        from rethlas_core.project_mcp import main as managed_main
+        raise SystemExit(managed_main(["--config", str(args.managed_config)]))
+    from rethlas_core.mcp_gate import require_managed_worker
+    require_managed_worker()
+    app = build_mcp_app()
+    if app is None:
+        raise SystemExit("Install the shared runtime's MCP dependencies first.")
+    app.run()
 
 
 if __name__ == "__main__":

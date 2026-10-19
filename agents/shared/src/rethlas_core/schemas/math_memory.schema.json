@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "MathMemoryContract",
+  "description": "Structural interchange contract, not a store or a trusted review decision. Names are display text, never identity keys.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "entities", "revisions", "relations", "evidence"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "entities": {"type": "array", "items": {"$ref": "#/$defs/entity"}},
+    "revisions": {"type": "array", "items": {"$ref": "#/$defs/revision"}},
+    "relations": {"type": "array", "items": {"$ref": "#/$defs/relation"}},
+    "evidence": {"type": "array", "items": {"$ref": "#/$defs/evidence"}}
+  },
+  "$defs": {
+    "text": {"type": "string", "minLength": 1, "pattern": "\\S"},
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "assertion_state": {"enum": ["candidate", "reviewed", "retracted"]},
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "actor", "recorded_at"],
+      "properties": {
+        "source": {"$ref": "#/$defs/text"},
+        "actor": {"$ref": "#/$defs/text"},
+        "recorded_at": {"type": "string", "format": "date-time"}
+      }
+    },
+    "evidence_ids": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/text"}},
+    "context_revision_ids": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/text"}},
+    "entity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["entity_id", "type", "name", "provenance"],
+      "properties": {
+        "entity_id": {"$ref": "#/$defs/text"},
+        "type": {"enum": ["Problem", "DefinitionContext", "Assumption", "Claim", "ProofArtifact", "Review", "Reference", "Counterexample", "Failure", "ResearchArtifact"]},
+        "name": {"$ref": "#/$defs/text"},
+        "provenance": {"$ref": "#/$defs/provenance"}
+      }
+    },
+    "endpoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["entity_id", "revision_id"],
+      "properties": {
+        "entity_id": {"$ref": "#/$defs/text"},
+        "revision_id": {"$ref": "#/$defs/text"}
+      }
+    },
+    "revision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["entity_id", "revision_id", "body", "body_sha256", "provenance", "assertion_state", "validity", "context_revision_ids", "evidence_ids"],
+      "properties": {
+        "entity_id": {"$ref": "#/$defs/text"},
+        "revision_id": {"$ref": "#/$defs/text"},
+        "body": {"$ref": "#/$defs/text"},
+        "body_sha256": {"$ref": "#/$defs/sha256"},
+        "provenance": {"$ref": "#/$defs/provenance"},
+        "assertion_state": {"$ref": "#/$defs/assertion_state"},
+        "validity": {"enum": ["usable", "needs_review", "retracted", "unavailable"]},
+        "context_revision_ids": {"$ref": "#/$defs/context_revision_ids"},
+        "evidence_ids": {"$ref": "#/$defs/evidence_ids"},
+        "review_kind": {"enum": ["unknown", "llm_review", "human_review", "formal_check"]},
+        "review_bindings": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["relation_id", "sha256"],
+            "properties": {"relation_id": {"$ref": "#/$defs/text"}, "sha256": {"$ref": "#/$defs/sha256"}}
+          }
+        },
+        "research_progress": {"enum": ["planned", "in_progress", "completed", "abandoned"]},
+        "historical_status": {"enum": ["open", "solved", "failed"]}
+      }
+    },
+    "relation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["relation_id", "type", "source", "target", "provenance", "assertion_state", "context_revision_ids", "evidence_ids"],
+      "properties": {
+        "relation_id": {"$ref": "#/$defs/text"},
+        "type": {"enum": ["in_context", "assumes", "depends_on", "attempts_to_prove", "reviews", "refutes", "cites", "contrasts", "derived_from", "has_subgoal"]},
+        "source": {"$ref": "#/$defs/endpoint"},
+        "target": {"$ref": "#/$defs/endpoint"},
+        "provenance": {"$ref": "#/$defs/provenance"},
+        "assertion_state": {"$ref": "#/$defs/assertion_state"},
+        "context_revision_ids": {"$ref": "#/$defs/context_revision_ids"},
+        "evidence_ids": {"$ref": "#/$defs/evidence_ids"}
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["evidence_id", "locator", "sha256", "provenance"],
+      "properties": {
+        "evidence_id": {"$ref": "#/$defs/text"},
+        "locator": {"$ref": "#/$defs/text"},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "provenance": {"$ref": "#/$defs/provenance"}
+      }
+    }
+  }
+}

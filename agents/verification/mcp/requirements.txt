@@ -1,3 +1,6 @@
-fastmcp>=2.0.0
-jsonschema>=4.20.0
-requests>=2.31.0
+# Compatibility installation list. Install the shared package from the repository
+# root after local code execution/installation has been authorized:
+#   uv pip install --python .venv/bin/python --no-build-isolation -e './agents/shared[server,mcp]'
+mcp==1.30.0
+jsonschema==4.26.0
+requests==2.32.5

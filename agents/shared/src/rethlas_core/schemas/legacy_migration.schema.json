@@ -1,0 +1,216 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "LegacyJsonlMigration",
+  "description": "Closed offline source/package protocol. A package hash is an input pin, not permission or a commit. All source status and identity fields remain untrusted.",
+  "$defs": {
+    "hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "text": {"type": "string", "minLength": 1, "maxLength": 1024, "pattern": "\\S"},
+    "alias": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"},
+    "scope_id": {"type": "string", "pattern": "^[A-Za-z0-9_.-]{1,128}$", "not": {"enum": [".", ".."]}},
+    "profile": {"enum": ["generation-10", "verification-5"]},
+    "channel": {"enum": ["immediate_conclusions", "toy_examples", "counterexamples", "big_decisions", "subgoals", "proof_steps", "failed_paths", "verification_reports", "branch_states", "events", "statement_checks", "reference_checks", "failed_checks"]},
+    "scope": {
+      "type": "object", "additionalProperties": false,
+      "required": ["problem_id", "branch_id", "source_run_id"],
+      "properties": {
+        "problem_id": {"anyOf": [{"type": "null"}, {"$ref": "#/$defs/text"}]},
+        "branch_id": {"anyOf": [{"type": "null"}, {"$ref": "#/$defs/text"}]},
+        "source_run_id": {"anyOf": [{"type": "null"}, {"$ref": "#/$defs/text"}]}
+      }
+    },
+    "options": {
+      "type": "object", "additionalProperties": false, "required": ["allow_quarantine"],
+      "properties": {"allow_quarantine": {"type": "boolean"}}
+    },
+    "input_source": {
+      "type": "object", "additionalProperties": false,
+      "required": ["alias", "profile", "channel", "scope", "path", "expected_sha256"],
+      "properties": {
+        "alias": {"$ref": "#/$defs/alias"}, "profile": {"$ref": "#/$defs/profile"},
+        "channel": {"$ref": "#/$defs/channel"}, "scope": {"$ref": "#/$defs/scope"},
+        "path": {"type": "string", "minLength": 1, "maxLength": 4096},
+        "expected_sha256": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "spec": {
+      "type": "object", "additionalProperties": false,
+      "required": ["version", "source_namespace", "import_observed_at", "options", "sources"],
+      "properties": {
+        "version": {"const": "legacy-jsonl-1"}, "source_namespace": {"$ref": "#/$defs/text"},
+        "import_observed_at": {"type": "string", "maxLength": 128, "format": "date-time"},
+        "options": {"$ref": "#/$defs/options"},
+        "sources": {"type": "array", "minItems": 1, "maxItems": 16, "items": {"$ref": "#/$defs/input_source"}}
+      }
+    },
+    "frozen_source": {
+      "type": "object", "additionalProperties": false,
+      "required": ["alias", "profile", "channel", "scope", "sha256", "bytes"],
+      "properties": {
+        "alias": {"$ref": "#/$defs/alias"}, "profile": {"$ref": "#/$defs/profile"},
+        "channel": {"$ref": "#/$defs/channel"}, "scope": {"$ref": "#/$defs/scope"},
+        "sha256": {"$ref": "#/$defs/hash"}, "bytes": {"type": "integer", "minimum": 0, "maximum": 1048576}
+      }
+    },
+    "snapshot": {
+      "type": "object", "additionalProperties": false,
+      "required": ["version", "converter_version", "source_namespace", "import_observed_at", "options", "sources"],
+      "properties": {
+        "version": {"const": "legacy-jsonl-1"}, "converter_version": {"const": "reference-wrapper-1"},
+        "source_namespace": {"$ref": "#/$defs/text"},
+        "import_observed_at": {"type": "string", "maxLength": 128, "format": "date-time"},
+        "options": {"$ref": "#/$defs/options"},
+        "sources": {"type": "array", "minItems": 1, "maxItems": 16, "items": {"$ref": "#/$defs/frozen_source"}}
+      }
+    },
+    "count": {"type": "integer", "minimum": 0},
+    "reasons": {
+      "type": "object", "additionalProperties": false,
+      "required": ["blank", "invalid_utf8", "invalid_json", "duplicate_key", "nonfinite", "invalid_json_unicode", "too_deep", "nonobject", "unknown_envelope"],
+      "properties": {
+        "blank": {"$ref": "#/$defs/count"}, "invalid_utf8": {"$ref": "#/$defs/count"},
+        "invalid_json": {"$ref": "#/$defs/count"}, "duplicate_key": {"$ref": "#/$defs/count"},
+        "nonfinite": {"$ref": "#/$defs/count"}, "invalid_json_unicode": {"$ref": "#/$defs/count"},
+        "too_deep": {"$ref": "#/$defs/count"}, "nonobject": {"$ref": "#/$defs/count"},
+        "unknown_envelope": {"$ref": "#/$defs/count"}
+      }
+    },
+    "reference_counts": {
+      "type": "object", "additionalProperties": false,
+      "required": ["resolved", "unresolved", "ambiguous", "invalid_type"],
+      "properties": {
+        "resolved": {"$ref": "#/$defs/count"}, "unresolved": {"$ref": "#/$defs/count"},
+        "ambiguous": {"$ref": "#/$defs/count"}, "invalid_type": {"$ref": "#/$defs/count"}
+      }
+    },
+    "counts": {
+      "type": "object", "additionalProperties": false,
+      "required": ["source_files", "raw_bytes", "physical_lines", "accepted_lines", "record_lines", "event_lines", "quarantined_lines", "reasons", "duplicate_content_occurrences", "duplicate_id_groups", "conflicting_id_groups", "references"],
+      "properties": {
+        "source_files": {"type": "integer", "minimum": 1, "maximum": 16},
+        "raw_bytes": {"type": "integer", "minimum": 0, "maximum": 4194304},
+        "physical_lines": {"type": "integer", "minimum": 0, "maximum": 4096},
+        "accepted_lines": {"type": "integer", "minimum": 0, "maximum": 256},
+        "record_lines": {"$ref": "#/$defs/count"}, "event_lines": {"$ref": "#/$defs/count"},
+        "quarantined_lines": {"$ref": "#/$defs/count"}, "reasons": {"$ref": "#/$defs/reasons"},
+        "duplicate_content_occurrences": {"$ref": "#/$defs/count"},
+        "duplicate_id_groups": {"$ref": "#/$defs/count"}, "conflicting_id_groups": {"$ref": "#/$defs/count"},
+        "references": {"$ref": "#/$defs/reference_counts"}
+      }
+    },
+    "legacy_id": {
+      "type": "object", "additionalProperties": false, "required": ["field", "value"],
+      "properties": {"field": {"enum": ["id", "plan_id", "subgoal_id"]}, "value": {}}
+    },
+    "reference": {
+      "type": "object", "additionalProperties": false,
+      "required": ["field", "index", "value", "target_channel", "status", "target_revision_id"],
+      "properties": {
+        "field": {"enum": ["subgoal_id", "used_examples", "used_counterexamples", "used_results", "adapted_from", "supports_branch_ids", "plan_id"]},
+        "index": {"anyOf": [{"type": "null"}, {"$ref": "#/$defs/count"}]}, "value": {},
+        "target_channel": {"anyOf": [{"type": "null"}, {"$ref": "#/$defs/channel"}]},
+        "status": {"enum": ["resolved", "unresolved", "ambiguous", "invalid_type"]},
+        "target_revision_id": {"anyOf": [{"type": "null"}, {"$ref": "#/$defs/text"}]}
+      }
+    },
+    "disposition": {"enum": ["accepted_record", "accepted_event", "blank", "invalid_utf8", "invalid_json", "duplicate_key", "nonfinite", "invalid_json_unicode", "too_deep", "nonobject", "unknown_envelope"]},
+    "map_line": {
+      "type": "object", "additionalProperties": false,
+      "required": ["alias", "file_sha256", "line", "offset", "length", "raw_sha256", "disposition", "entity_id", "revision_id", "evidence_id", "legacy_ids", "references"],
+      "properties": {
+        "alias": {"$ref": "#/$defs/alias"}, "file_sha256": {"$ref": "#/$defs/hash"},
+        "line": {"type": "integer", "minimum": 1, "maximum": 4096}, "offset": {"$ref": "#/$defs/count"},
+        "length": {"type": "integer", "minimum": 1, "maximum": 131072}, "raw_sha256": {"$ref": "#/$defs/hash"},
+        "disposition": {"$ref": "#/$defs/disposition"},
+        "entity_id": {"anyOf": [{"type": "null"}, {"$ref": "#/$defs/text"}]},
+        "revision_id": {"anyOf": [{"type": "null"}, {"$ref": "#/$defs/text"}]},
+        "evidence_id": {"anyOf": [{"type": "null"}, {"$ref": "#/$defs/text"}]},
+        "legacy_ids": {"type": "array", "maxItems": 3, "items": {"$ref": "#/$defs/legacy_id"}},
+        "references": {"type": "array", "items": {"$ref": "#/$defs/reference"}}
+      }
+    },
+    "map": {
+      "type": "object", "additionalProperties": false, "required": ["version", "snapshot_sha256", "counts", "lines"],
+      "properties": {
+        "version": {"const": "legacy-map-1"}, "snapshot_sha256": {"$ref": "#/$defs/hash"},
+        "counts": {"$ref": "#/$defs/counts"},
+        "lines": {"type": "array", "maxItems": 4096, "items": {"$ref": "#/$defs/map_line"}}
+      }
+    },
+    "quarantined_line": {
+      "type": "object", "additionalProperties": false,
+      "required": ["alias", "file_sha256", "line", "offset", "length", "raw_sha256", "disposition"],
+      "properties": {
+        "alias": {"$ref": "#/$defs/alias"}, "file_sha256": {"$ref": "#/$defs/hash"},
+        "line": {"type": "integer", "minimum": 1, "maximum": 4096}, "offset": {"$ref": "#/$defs/count"},
+        "length": {"type": "integer", "minimum": 1, "maximum": 131072}, "raw_sha256": {"$ref": "#/$defs/hash"},
+        "disposition": {"enum": ["blank", "invalid_utf8", "invalid_json", "duplicate_key", "nonfinite", "invalid_json_unicode", "too_deep", "nonobject", "unknown_envelope"]}
+      }
+    },
+    "quarantine": {
+      "type": "object", "additionalProperties": false, "required": ["version", "snapshot_sha256", "lines"],
+      "properties": {
+        "version": {"const": "legacy-quarantine-1"}, "snapshot_sha256": {"$ref": "#/$defs/hash"},
+        "lines": {"type": "array", "maxItems": 4096, "items": {"$ref": "#/$defs/quarantined_line"}}
+      }
+    },
+    "raw_file": {
+      "type": "object", "additionalProperties": false, "required": ["name", "bytes", "sha256"],
+      "properties": {
+        "name": {"type": "string", "pattern": "^raw-[A-Za-z0-9][A-Za-z0-9_-]{0,63}\\.jsonl$"},
+        "bytes": {"type": "integer", "minimum": 0, "maximum": 1048576}, "sha256": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "source_manifest": {
+      "type": "object", "additionalProperties": false,
+      "required": ["version", "snapshot_sha256", "map_sha256", "quarantine_sha256", "raw_files", "counts"],
+      "properties": {
+        "version": {"const": "legacy-source-manifest-1"}, "snapshot_sha256": {"$ref": "#/$defs/hash"},
+        "map_sha256": {"$ref": "#/$defs/hash"}, "quarantine_sha256": {"$ref": "#/$defs/hash"},
+        "raw_files": {"type": "array", "minItems": 1, "maxItems": 16, "items": {"$ref": "#/$defs/raw_file"}},
+        "counts": {"$ref": "#/$defs/counts"}
+      }
+    },
+    "limits": {
+      "type": "object", "additionalProperties": false,
+      "required": ["request_bytes", "body_bytes", "graph_bytes", "exchange_bytes", "entries", "history", "receipts", "journal_bytes", "quarantine_files", "store_bytes", "files"],
+      "properties": {
+        "request_bytes": {"type": "integer", "minimum": 256, "maximum": 524288},
+        "body_bytes": {"type": "integer", "minimum": 1, "maximum": 131072},
+        "graph_bytes": {"type": "integer", "minimum": 512, "maximum": 2097152},
+        "exchange_bytes": {"type": "integer", "minimum": 512, "maximum": 8388608},
+        "entries": {"type": "integer", "minimum": 1, "maximum": 1024},
+        "history": {"type": "integer", "minimum": 1, "maximum": 256},
+        "receipts": {"type": "integer", "minimum": 1, "maximum": 256},
+        "journal_bytes": {"const": 16384},
+        "quarantine_files": {"type": "integer", "minimum": 1, "maximum": 32},
+        "store_bytes": {"type": "integer", "minimum": 65536, "maximum": 268435456},
+        "files": {"type": "integer", "minimum": 32, "maximum": 8192}
+      }
+    },
+    "target": {
+      "type": "object", "additionalProperties": false,
+      "required": ["version", "store_id", "config_sha256", "owner", "run_id", "domain", "epoch", "expected_head", "limits"],
+      "properties": {
+        "version": {"const": "legacy-target-1"}, "store_id": {"$ref": "#/$defs/hash"},
+        "config_sha256": {"$ref": "#/$defs/hash"}, "owner": {"$ref": "#/$defs/scope_id"},
+        "run_id": {"$ref": "#/$defs/scope_id"}, "domain": {"const": "fixture"},
+        "epoch": {"type": "integer", "minimum": 0}, "expected_head": {"$ref": "#/$defs/hash"},
+        "limits": {"$ref": "#/$defs/limits"}
+      }
+    },
+    "member": {
+      "type": "object", "additionalProperties": false, "required": ["name", "bytes", "sha256"],
+      "properties": {
+        "name": {"type": "string", "pattern": "^(snapshot\\.json|map\\.json|quarantine\\.json|source-manifest\\.json|target\\.json|request\\.json|raw-[A-Za-z0-9][A-Za-z0-9_-]{0,63}\\.jsonl)$"},
+        "bytes": {"type": "integer", "minimum": 0, "maximum": 16777216}, "sha256": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "bundle": {
+      "type": "object", "additionalProperties": false, "required": ["version", "snapshot_sha256", "files"],
+      "properties": {
+        "version": {"const": "legacy-bundle-1"}, "snapshot_sha256": {"$ref": "#/$defs/hash"},
+        "files": {"type": "array", "minItems": 7, "maxItems": 22, "items": {"$ref": "#/$defs/member"}}
+      }
+    }
+  }
+}

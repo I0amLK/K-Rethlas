@@ -1,6 +1,6 @@
 # Proof Verification Agent
 
-This agent verifies the correctness of a mathematical proof provided in markdown format. It checks the logical flow, theorem applications, and external references to ensure the proof is valid. The agent produces a detailed verification report and a strict verdict on the proof's correctness.
+This agent checks the logical flow, theorem applications, and external references of a candidate mathematical proof. Its report is a candidate review, not an authorization or formal proof. Trusted controller policy, finite budgets, and execution isolation override workflow instructions. Live model execution and external search are disabled in M1; no alternate unmanaged worker, network route, capability issuer, or nested agent may bypass that boundary. Fixture results are protocol tests only.
 
 ## Objective
 
@@ -12,7 +12,7 @@ Given:
 
 verify whether the proof is correct and output:
 
-- `results/{run_id}/verification.json`
+- `results/{run_id}/verification.candidate.json`
 
 with JSON fields:
 
@@ -93,7 +93,7 @@ For each statement/subproof in the markdown, in textual order:
 
 When a statement or subproof cites a theorem/lemma/definition from an external paper:
 
-1. Query `search_arxiv_theorems` with the full referenced statement text.
+1. When trusted egress is authorized, query `search_arxiv_theorems` with the full referenced statement text. Otherwise preserve the missing-reference check as unresolved; do not make a direct HTTP request.
 2. Compare returned theorem texts to the referenced statement directly in agent reasoning.
 3. Expand the definitions and terminology in the cited statement using the cited paper's context before deciding whether the theorem applies.
 4. Check whether the current proof uses those terms with the same meanings and hypotheses. In mathematics, the same word can refer to different definitions in different contexts.
@@ -104,7 +104,7 @@ When a statement or subproof cites a theorem/lemma/definition from an external p
 7. If the proof uses the referenced statement to obtain further conclusions, check the transition from the referenced statement to those conclusions. Do not accept a citation as sufficient if the proof hand-waves the specialization, instantiation, or intermediate deductions.
 8. If that transition is vague, missing, or unsupported, record a gap; if the transition is logically invalid, record a critical error.
 9. If the theorem exists but is used with mismatched definitions, assumptions, ambient context, or a subtly different formula in the definition, add a critical error for incorrect application.
-10. If no match is found, use Codex's built-in web search with the same referenced statement.
+10. If no match is found, use an authorized web-search path if available; otherwise report the unresolved reference check, not a proven non-existence claim.
 11. If still not found, add a critical error:
    - location: where the reference is used
    - issue: non-existent or wrong external reference.
@@ -143,9 +143,9 @@ Write final JSON using:
 
 Target file must be:
 
-- `results/{run_id}/verification.json`
+- `results/{run_id}/verification.candidate.json`
 
-Stop only after this file is written successfully.
+A successful candidate write only acknowledges a draft report. Submit findings before the report; the trusted controller registers accepted findings in private append-only records and independently checks coverage, frozen inputs, configuration, and receipt. Never claim publication from a writable file. Stop when the controller reports completion, cancellation, budget exhaustion, or unavailability.
 
 ## Output JSON Contract
 
@@ -173,6 +173,6 @@ If any error or gap exists, `verdict` must be `"wrong"` and `repair_hints` must 
 
 1. Verify the markdown proof in textual order.
 2. Include every critical error and every gap in the report.
-3. External-paper references must be checked via `search_arxiv_theorems` first, then Codex's built-in web search.
+3. External-paper references must be checked through authorized egress only; unavailable references remain unresolved, not automatically false.
 4. Accept iff there are zero errors and zero gaps.
-5. Persist final JSON to `results/{run_id}/verification.json`.
+5. Persist candidate JSON to `results/{run_id}/verification.candidate.json`; only the controller may issue a receipt or update a publication manifest.

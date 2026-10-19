@@ -1,11 +1,23 @@
 ---
 name: recursive-proving
-description: Launch one sub-agent per decomposition plan after direct screening has identified the key stuck points for each plan. Use when all current plans have been screened by direct proving, none fully solves the problem, and parallel recursive work is needed.
+description: Revisit decomposition plans after direct screening; M1 runs plans sequentially and prohibits nested model agents.
 ---
 
 # Recursive Proving
 
 Use this skill when direct proving has failed on the current decomposition plans.
+
+## M2c fixture boundary
+
+The legacy sequential workflow below is not a managed T08 branch and does not
+enable live generation. An explicitly controller-managed fixture branch receives
+only its frozen approved public baseline and its own write domain; it must not
+inherit the sibling stuck points, history, summaries or shared caches listed in
+the legacy contract. All required branches must be sealed before the controller
+exports a join candidate. The export is not a shared-source commit or a math
+review. These instructions explain the modes; the context controller and actual
+worker sandbox enforce the boundary, not this skill. Model concurrency remains
+at most three including the main session, with no recursive delegation.
 
 ## Input Contract
 
@@ -19,17 +31,17 @@ Read:
 ## Procedure
 
 1. Confirm that all current decomposition plans have already been attempted with `$direct-proving` and that none has fully solved the problem.
-2. Spawn one sub-agent per decomposition plan.
-3. Give each sub-agent:
+2. In M1, revisit plans sequentially; do not spawn sub-agents. A future trusted scheduler must reserve shared concurrency slots before any parallel work. The total ceiling is three model tasks including the main session.
+3. For each sequential attempt retain:
    - the full target theorem
    - the assigned decomposition plan
    - the key stuck points for its own plan
    - the key stuck points found in the other plans
    - the instruction to follow `AGENTS.md`
-4. Tell each sub-agent to tackle the assigned plan under the instructions in `AGENTS.md`, treating that plan as its starting point rather than restarting the search from zero. If new evidence or discoveries justify it, the sub-agent may refine, extend, or locally revise the plan, but it should preserve continuity with the assigned plan instead of discarding it outright.
-5. Tell each sub-agent that it may itself spawn sub-agents recursively if that helps its assigned plan.
-6. Require each sub-agent to write progress, failures, and any successful proof development back into the shared memory using the same data-relative `problem_id` as the MCP `problem_id`.
-7. Wait for all sub-agents to finish, then gather their reports.
+4. Tackle each plan under `AGENTS.md`, preserving its recorded stuck points. Refine a plan when evidence warrants it, without discarding the history.
+5. No recursive spawning is allowed in M1. Tool visibility and prompt instructions are not substitutes for the controller's execution boundary.
+6. Preserve progress, failures and candidate developments under the same data-relative `problem_id`; these are research history, not verified facts. Future branches require frozen public baselines plus separate write domains, not unrestricted shared-directory access.
+7. Gather the sequential reports. For future managed parallelism, a trusted join barrier must close writes before merging.
 8. If any plan succeeds, assemble the proof draft from that plan.
 9. If all plans fail, hand the collected reports to `$identify-key-failures`.
 
@@ -59,7 +71,7 @@ Update `branch_states` with the recursive round status and per-plan outcomes.
 - `memory_append`
 - `branch_update`
 - `search_arxiv_theorems`
-- Codex sub-agent tools: `spawn_agent`, `send_input`, `wait_agent`, `close_agent`
+- No Codex spawning tools in M1. Any later scheduler must enforce the shared three-task ceiling and forbid nested delegation.
 
 ## Failure Logging
 

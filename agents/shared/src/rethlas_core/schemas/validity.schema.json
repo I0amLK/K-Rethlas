@@ -1,0 +1,127 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ManagedFixtureValidity",
+  "description": "A bounded single-service current-use protocol, never mathematical or production review.",
+  "$defs": {
+    "hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "id": {"type": "string", "minLength": 1, "maxLength": 4096, "pattern": "\\S"},
+    "scope": {"type": "string", "pattern": "^(?!\\.{1,2}$)[A-Za-z0-9_.-]{1,128}$"},
+    "count": {"type": "integer", "minimum": 0, "maximum": 4096},
+    "ref": {"type": "object", "additionalProperties": false, "required": ["entity_id", "revision_id", "body_sha256"], "properties": {
+      "entity_id": {"$ref": "#/$defs/id"}, "revision_id": {"$ref": "#/$defs/id"}, "body_sha256": {"$ref": "#/$defs/hash"}}},
+    "refs": {"type": "array", "maxItems": 256, "uniqueItems": true, "items": {"$ref": "#/$defs/ref"}},
+    "roots": {"type": "object", "additionalProperties": false, "required": ["problem", "claim", "proof"], "properties": {
+      "problem": {"$ref": "#/$defs/ref"}, "claim": {"$ref": "#/$defs/ref"}, "proof": {"$ref": "#/$defs/ref"}}},
+    "checkpoint": {"type": "object", "additionalProperties": false, "required": ["head", "generation", "graph_sha256"], "properties": {
+      "head": {"$ref": "#/$defs/hash"}, "generation": {"type": "integer", "minimum": 0, "maximum": 64}, "graph_sha256": {"$ref": "#/$defs/hash"}}},
+    "config": {"type": "object", "additionalProperties": false,
+      "required": ["version", "service_id", "owner", "domain", "policy_hash", "store_id", "store_config_sha256", "genesis"], "properties": {
+        "version": {"const": "validity-1"}, "service_id": {"$ref": "#/$defs/hash"}, "owner": {"$ref": "#/$defs/scope"},
+        "domain": {"const": "fixture"}, "policy_hash": {"$ref": "#/$defs/hash"}, "store_id": {"$ref": "#/$defs/hash"},
+        "store_config_sha256": {"$ref": "#/$defs/hash"}, "genesis": {"$ref": "#/$defs/checkpoint"}}},
+    "withdraw": {"type": "object", "additionalProperties": false, "required": ["version", "request_id", "targets", "reason"], "properties": {
+      "version": {"const": "validity-1"}, "request_id": {"$ref": "#/$defs/id"},
+      "targets": {"type": "array", "minItems": 1, "maxItems": 32, "uniqueItems": true, "items": {"$ref": "#/$defs/ref"}},
+      "reason": {"type": "string", "minLength": 1, "maxLength": 4096}}},
+    "register": {"type": "object", "additionalProperties": false,
+      "required": ["version", "request_id", "use_id", "expected_head", "roots", "dependencies", "references"], "properties": {
+        "version": {"const": "validity-1"}, "request_id": {"$ref": "#/$defs/id"}, "use_id": {"$ref": "#/$defs/scope"},
+        "expected_head": {"$ref": "#/$defs/hash"}, "roots": {"$ref": "#/$defs/roots"},
+        "dependencies": {"$ref": "#/$defs/refs"}, "references": {"$ref": "#/$defs/refs"}}},
+    "probe": {"type": "object", "additionalProperties": false, "required": ["version", "request_id"], "properties": {
+      "version": {"const": "validity-1"}, "request_id": {"$ref": "#/$defs/id"}}},
+    "publish": {"type": "object", "additionalProperties": false, "required": ["version", "request_id", "probe_id"], "properties": {
+      "version": {"const": "validity-1"}, "request_id": {"$ref": "#/$defs/id"}, "probe_id": {"$ref": "#/$defs/hash"}}},
+    "lookup": {"type": "object", "additionalProperties": false, "required": ["version", "refs", "depth"], "properties": {
+      "version": {"const": "validity-1"}, "refs": {"type": "array", "minItems": 1, "maxItems": 16, "uniqueItems": true, "items": {"$ref": "#/$defs/ref"}},
+      "depth": {"type": "integer", "minimum": 0, "maximum": 8}}},
+    "identity": {"type": "object", "additionalProperties": false, "required": ["owner", "run_id", "domain", "role", "epoch", "resource"], "properties": {
+      "owner": {"$ref": "#/$defs/scope"}, "run_id": {"$ref": "#/$defs/scope"}, "domain": {"const": "fixture"},
+      "role": {"enum": ["operator", "validity_writer", "validity_withdrawer", "validity_reader", "validity_verifier", "validity_publisher"]},
+      "epoch": {"$ref": "#/$defs/count"}, "resource": {"$ref": "#/$defs/scope"}}},
+    "binding": {"type": "object", "additionalProperties": false, "required": ["request_id", "operation_sha256", "identity", "kind", "bucket", "status", "result"], "properties": {
+      "request_id": {"$ref": "#/$defs/id"}, "operation_sha256": {"$ref": "#/$defs/hash"}, "identity": {"$ref": "#/$defs/identity"},
+      "kind": {"enum": ["commit", "withdraw", "register", "probe", "publish", "recover"]}, "bucket": {"enum": ["ordinary", "withdraw", "recovery"]},
+      "status": {"enum": ["bound", "started", "committed", "accepted", "published", "registered", "withdrawn", "aborted"]},
+      "result": {"type": "object", "maxProperties": 16}}},
+    "event": {"type": "object", "additionalProperties": false, "required": ["event_id", "sequence", "kind", "request_key"], "properties": {
+      "event_id": {"$ref": "#/$defs/hash"}, "sequence": {"$ref": "#/$defs/count"}, "kind": {"enum": ["ADMISSION", "REQUEST_BOUND", "INTERNAL_TOKEN", "RUN_BOUND", "TOKEN_ISSUED", "GRAPH_PREPARE", "GRAPH_ACCEPT", "GRAPH_ABORT", "WITHDRAW", "USE_REGISTERED", "PROBE_STARTED", "PROBE_ACCEPTED", "FIXTURE_PUBLISHED", "RECOVERY", "PREPARED_ABORT"]},
+      "request_key": {"oneOf": [{"$ref": "#/$defs/hash"}, {"type": "null"}]}}},
+    "run": {"type": "object", "additionalProperties": false, "required": ["role", "resource"], "properties": {
+      "role": {"enum": ["validity_writer", "validity_withdrawer", "validity_reader", "validity_verifier", "validity_publisher"]}, "resource": {"$ref": "#/$defs/scope"}}},
+    "use_record": {"type": "object", "additionalProperties": false, "required": ["object_sha256", "dto_sha256", "descriptor_sha256", "graph", "request_key"], "properties": {
+      "object_sha256": {"$ref": "#/$defs/hash"}, "dto_sha256": {"$ref": "#/$defs/hash"}, "descriptor_sha256": {"$ref": "#/$defs/hash"},
+      "graph": {"$ref": "#/$defs/checkpoint"}, "request_key": {"$ref": "#/$defs/hash"}}},
+    "pending_graph": {"type": "object", "additionalProperties": false, "required": ["request_key", "operation_sha256", "parent"], "properties": {
+      "request_key": {"$ref": "#/$defs/hash"}, "operation_sha256": {"$ref": "#/$defs/hash"}, "parent": {"$ref": "#/$defs/checkpoint"}}},
+    "state": {"type": "object", "additionalProperties": false,
+      "required": ["version", "service_id", "config_sha256", "sequence", "events", "requests", "accepted_graph", "pending_graph", "uses", "probes", "publications", "runs", "counts", "withdrawal_version"], "properties": {
+        "version": {"const": "validity-1"}, "service_id": {"$ref": "#/$defs/hash"}, "config_sha256": {"$ref": "#/$defs/hash"},
+        "sequence": {"type": "integer", "minimum": 0, "maximum": 512}, "withdrawal_version": {"type": "integer", "minimum": 0, "maximum": 32},
+        "events": {"type": "array", "maxItems": 512, "items": {"$ref": "#/$defs/event"}},
+        "requests": {"type": "object", "maxProperties": 256, "propertyNames": {"$ref": "#/$defs/hash"}, "additionalProperties": {"$ref": "#/$defs/binding"}},
+        "accepted_graph": {"$ref": "#/$defs/checkpoint"}, "pending_graph": {"oneOf": [{"$ref": "#/$defs/pending_graph"}, {"type": "null"}]},
+        "uses": {"type": "object", "maxProperties": 8, "propertyNames": {"$ref": "#/$defs/scope"}, "additionalProperties": {"$ref": "#/$defs/use_record"}},
+        "probes": {"type": "object", "maxProperties": 128, "propertyNames": {"$ref": "#/$defs/hash"}, "additionalProperties": {"type": "object", "maxProperties": 16}},
+        "publications": {"type": "object", "maxProperties": 128, "propertyNames": {"$ref": "#/$defs/hash"}, "additionalProperties": {"type": "object", "maxProperties": 16}},
+        "runs": {"type": "object", "maxProperties": 32, "propertyNames": {"$ref": "#/$defs/scope"}, "additionalProperties": {"$ref": "#/$defs/run"}},
+        "counts": {"type": "object", "maxProperties": 96, "propertyNames": {"type": "string", "maxLength": 160}, "additionalProperties": {"$ref": "#/$defs/count"}}}},
+    "anchor": {"type": "object", "additionalProperties": false,
+      "required": ["version", "service_id", "config_sha256", "phase", "sequence", "state_sha256", "transition_sha256", "next_sequence", "next_sha256"], "properties": {
+        "version": {"const": "validity-1"}, "service_id": {"$ref": "#/$defs/hash"}, "config_sha256": {"$ref": "#/$defs/hash"},
+        "phase": {"enum": ["stable", "pending"]}, "sequence": {"$ref": "#/$defs/count"}, "state_sha256": {"$ref": "#/$defs/hash"},
+        "transition_sha256": {"oneOf": [{"$ref": "#/$defs/hash"}, {"type": "null"}]},
+        "next_sequence": {"oneOf": [{"$ref": "#/$defs/count"}, {"type": "null"}]}, "next_sha256": {"oneOf": [{"$ref": "#/$defs/hash"}, {"type": "null"}]}}},
+    "transition": {"type": "object", "additionalProperties": false,
+      "required": ["version", "service_id", "config_sha256", "prev_sequence", "prev_sha256", "next_sequence", "next_sha256", "kind", "request_key", "authorization", "next_state"], "properties": {
+        "version": {"const": "validity-1"}, "service_id": {"$ref": "#/$defs/hash"}, "config_sha256": {"$ref": "#/$defs/hash"},
+        "prev_sequence": {"$ref": "#/$defs/count"}, "prev_sha256": {"$ref": "#/$defs/hash"}, "next_sequence": {"$ref": "#/$defs/count"}, "next_sha256": {"$ref": "#/$defs/hash"},
+        "kind": {"type": "string", "maxLength": 32}, "request_key": {"oneOf": [{"$ref": "#/$defs/hash"}, {"type": "null"}]},
+        "authorization": {"oneOf": [{"type": "object", "minProperties": 10, "maxProperties": 10}, {"type": "null"}]}, "next_state": {"$ref": "#/$defs/state"}}},
+    "checked_at": {"type": "object", "additionalProperties": false, "required": ["control_sequence", "withdrawal_version", "graph_head", "policy_hash"], "properties": {
+      "control_sequence": {"$ref": "#/$defs/count"}, "withdrawal_version": {"$ref": "#/$defs/count"}, "graph_head": {"$ref": "#/$defs/hash"}, "policy_hash": {"$ref": "#/$defs/hash"}}},
+    "fixture_receipt": {"type": "object", "additionalProperties": false,
+      "required": ["version", "publication_id", "probe_id", "use_id", "dto_sha256", "descriptor_sha256", "overlay_sha256", "published_at", "mathematical_review", "production_completed"], "properties": {
+        "version": {"const": "validity-fixture-receipt-1"}, "publication_id": {"$ref": "#/$defs/hash"}, "probe_id": {"$ref": "#/$defs/hash"}, "use_id": {"$ref": "#/$defs/scope"},
+        "dto_sha256": {"$ref": "#/$defs/hash"}, "descriptor_sha256": {"$ref": "#/$defs/hash"}, "overlay_sha256": {"$ref": "#/$defs/hash"}, "published_at": {"$ref": "#/$defs/checked_at"},
+        "mathematical_review": {"const": false}, "production_completed": {"const": false}}},
+    "endpoint": {"type": "object", "additionalProperties": false, "required": ["entity_id", "revision_id"], "properties": {
+      "entity_id": {"$ref": "#/$defs/id"}, "revision_id": {"$ref": "#/$defs/id"}}},
+    "dto_revision": {"type": "object", "additionalProperties": false,
+      "required": ["entity_id", "revision_id", "body_sha256", "type", "body", "context_revision_ids", "assertion_state", "validity"], "properties": {
+        "entity_id": {"$ref": "#/$defs/id"}, "revision_id": {"$ref": "#/$defs/id"}, "body_sha256": {"$ref": "#/$defs/hash"},
+        "type": {"enum": ["Problem", "Claim", "ProofArtifact", "DefinitionContext", "Assumption", "Reference"]},
+        "body": {"type": "string", "minLength": 1, "maxLength": 131072}, "context_revision_ids": {"type": "array", "maxItems": 256, "uniqueItems": true, "items": {"$ref": "#/$defs/id"}},
+        "assertion_state": {"const": "candidate"}, "validity": {"const": "needs_review"}}},
+    "dto_relation": {"type": "object", "additionalProperties": false,
+      "required": ["relation_id", "type", "source", "target", "context_revision_ids", "assertion_state"], "properties": {
+        "relation_id": {"$ref": "#/$defs/id"}, "type": {"enum": ["depends_on", "assumes", "in_context", "cites", "attempts_to_prove"]},
+        "source": {"$ref": "#/$defs/endpoint"}, "target": {"$ref": "#/$defs/endpoint"}, "assertion_state": {"const": "candidate"},
+        "context_revision_ids": {"type": "array", "maxItems": 256, "uniqueItems": true, "items": {"$ref": "#/$defs/id"}}}},
+    "dto": {"type": "object", "additionalProperties": false, "required": ["version", "policy_hash", "roots", "revisions", "relations"], "properties": {
+      "version": {"const": "validity-dto-1"}, "policy_hash": {"$ref": "#/$defs/hash"}, "roots": {"$ref": "#/$defs/roots"},
+      "revisions": {"type": "array", "minItems": 3, "maxItems": 256, "items": {"$ref": "#/$defs/dto_revision"}},
+      "relations": {"type": "array", "maxItems": 1024, "items": {"$ref": "#/$defs/dto_relation"}}}},
+    "descriptor": {"type": "object", "additionalProperties": false,
+      "required": ["version", "service_id", "store_id", "store_config_sha256", "use_id", "graph", "policy_hash", "dto_sha256", "support", "citation_only"], "properties": {
+        "version": {"const": "validity-use-1"}, "service_id": {"$ref": "#/$defs/hash"}, "store_id": {"$ref": "#/$defs/hash"}, "store_config_sha256": {"$ref": "#/$defs/hash"},
+        "use_id": {"$ref": "#/$defs/scope"}, "graph": {"$ref": "#/$defs/checkpoint"}, "policy_hash": {"$ref": "#/$defs/hash"}, "dto_sha256": {"$ref": "#/$defs/hash"},
+        "support": {"$ref": "#/$defs/refs"}, "citation_only": {"$ref": "#/$defs/refs"}}},
+    "use": {"type": "object", "additionalProperties": false, "required": ["dto", "descriptor"], "properties": {
+      "dto": {"$ref": "#/$defs/dto"}, "descriptor": {"$ref": "#/$defs/descriptor"}}},
+    "support_status": {"type": "object", "additionalProperties": false, "required": ["entity_id", "revision_id", "body_sha256", "withdrawn"], "properties": {
+      "entity_id": {"$ref": "#/$defs/id"}, "revision_id": {"$ref": "#/$defs/id"}, "body_sha256": {"$ref": "#/$defs/hash"}, "withdrawn": {"type": "boolean"}}},
+    "citation_status": {"type": "object", "additionalProperties": false, "required": ["entity_id", "revision_id", "body_sha256", "withdrawn", "use", "not_authorized_as_premise"], "properties": {
+      "entity_id": {"$ref": "#/$defs/id"}, "revision_id": {"$ref": "#/$defs/id"}, "body_sha256": {"$ref": "#/$defs/hash"}, "withdrawn": {"type": "boolean"},
+      "use": {"const": "historical_citation_only"}, "not_authorized_as_premise": {"const": true}}},
+    "overlay": {"type": "object", "additionalProperties": false, "required": ["policy_hash", "fixture_input_eligible", "support", "citation_only", "blockers"], "properties": {
+      "policy_hash": {"$ref": "#/$defs/hash"}, "fixture_input_eligible": {"type": "boolean"}, "blockers": {"$ref": "#/$defs/refs"},
+      "support": {"type": "array", "maxItems": 256, "items": {"$ref": "#/$defs/support_status"}},
+      "citation_only": {"type": "array", "maxItems": 256, "items": {"$ref": "#/$defs/citation_status"}}}},
+    "current": {"type": "object", "additionalProperties": false,
+      "required": ["use_id", "fixture_input_eligible", "blockers", "overlay", "overlay_sha256", "checked_at", "assertion_state", "validity", "mathematical_review", "production_completed"], "properties": {
+        "use_id": {"$ref": "#/$defs/scope"}, "fixture_input_eligible": {"type": "boolean"}, "blockers": {"$ref": "#/$defs/refs"},
+        "overlay": {"$ref": "#/$defs/overlay"}, "overlay_sha256": {"$ref": "#/$defs/hash"}, "checked_at": {"$ref": "#/$defs/checked_at"},
+        "assertion_state": {"const": "candidate"}, "validity": {"const": "needs_review"}, "mathematical_review": {"const": false}, "production_completed": {"const": false}}}
+  }
+}

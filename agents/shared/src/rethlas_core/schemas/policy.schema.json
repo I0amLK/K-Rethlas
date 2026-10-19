@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TrustedFoundationPolicy",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "default", "max_model_concurrency", "nested_agents", "network", "rules"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "default": {"const": "deny"},
+    "max_model_concurrency": {"type": "integer", "minimum": 1, "maximum": 3},
+    "nested_agents": {"const": false},
+    "network": {"const": "disabled"},
+    "rules": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["role", "action", "domains"],
+        "properties": {
+          "role": {"enum": ["generation", "verification", "publisher", "memory", "context_branch", "context_join", "context_verifier", "validity_writer", "validity_withdrawer", "validity_reader", "validity_verifier", "validity_publisher", "project_reader", "project_writer", "project_withdrawer", "research_runner"]},
+          "action": {"enum": ["verify", "status", "finding.append", "report.submit", "publish", "memory.read", "memory.commit", "memory.maintain", "context.branch.read", "context.branch.commit", "context.branch.seal", "context.join.read", "context.join.prepare", "context.view.read", "context.view.probe", "validity.commit", "validity.withdraw", "validity.read", "validity.status", "validity.probe", "validity.publish", "project.read", "project.search", "project.commit", "project.index", "project.withdraw", "research.run", "research.status"]},
+          "domains": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {"enum": ["fixture", "production", "research"]}
+          }
+        }
+      }
+    }
+  }
+}

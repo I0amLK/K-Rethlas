@@ -2,16 +2,15 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import re
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
-import requests
-
 try:
-    from fastmcp import FastMCP
+    from mcp.server.fastmcp import FastMCP
 except ImportError:  # pragma: no cover - dependency should be installed via requirements
     FastMCP = None  # type: ignore[assignment]
 
@@ -163,81 +162,32 @@ def search_arxiv_theorems(
     endpoint: str = THEOREM_SEARCH_URL,
     timeout_seconds: int = 30,
 ) -> Dict[str, Any]:
-    if not query.strip():
-        raise ValueError("query must be non-empty")
-    if num_results <= 0:
-        raise ValueError("num_results must be > 0")
-
-    payload = {
-        "query": query,
-        "task": THEOREM_SEARCH_TASK,
-        "num_results": num_results,
-    }
-
-    response = requests.post(endpoint, json=payload, timeout=timeout_seconds)
-    response.raise_for_status()
-
-    data = response.json()
-    if not isinstance(data, list):
-        raise ValueError("The theorem endpoint must return a JSON list")
-
-    normalized: List[Dict[str, str]] = []
-    for item in data:
-        if not isinstance(item, dict):
-            continue
-        normalized.append(
-            {
-                "title": str(item.get("title", "")),
-                "theorem": str(item.get("theorem", "")),
-                "arxiv_id": str(item.get("arxiv_id", "")),
-                "theorem_id": str(item.get("theorem_id", "")),
-            }
-        )
-
-    return {
-        "query": query,
-        "count": len(normalized),
-        "results": normalized,
-        "endpoint": endpoint,
-    }
+    raise PermissionError(
+        "External theorem search is disabled until a trusted, run-bound egress broker is configured"
+    )
 
 
 def verify_proof_service(
     statement: str,
     proof: str,
     endpoint: str = VERIFY_PROOF_URL,
-    timeout_seconds: int = 3600,
+    timeout_seconds: int = 30,
 ) -> Dict[str, Any]:
-    if not statement.strip():
-        raise ValueError("statement must be non-empty")
-    if not isinstance(proof, str):
-        raise ValueError("proof must be markdown text")
-    if not proof.strip():
-        raise ValueError("proof markdown must be non-empty")
+    from rethlas_core.client import verify_via_local_service
 
-    payload = {
-        "statement": statement,
-        "proof": proof,
-    }
-
-    response = requests.post(endpoint, json=payload, timeout=timeout_seconds)
-    response.raise_for_status()
-
-    try:
-        body = response.json()
-    except ValueError as exc:
-        raise ValueError("verification service returned non-JSON response") from exc
-
-    if not isinstance(body, dict):
-        raise ValueError("verification service must return a JSON object")
-
-    return {
-        "statement": statement,
-        "verification_report": body.get("verification_report", {}),
-        "verdict": body.get("verdict"),
-        "repair_hints": body.get("repair_hints"),
-        "endpoint": endpoint,
-    }
+    if not statement.strip() or not isinstance(proof, str) or not proof.strip():
+        raise ValueError("statement and proof markdown must be non-empty")
+    required = ("RETHLAS_CAPABILITY_FILE", "RETHLAS_OWNER", "RETHLAS_RUN_ID", "RETHLAS_DOMAIN")
+    if any(not os.environ.get(name) for name in required):
+        raise PermissionError("Trusted run identity and a scoped capability are required")
+    import hashlib
+    request_id = hashlib.sha256((statement + "\0" + proof).encode("utf-8")).hexdigest()
+    return verify_via_local_service(
+        statement, proof, endpoint=endpoint,
+        token_file=Path(os.environ["RETHLAS_CAPABILITY_FILE"]),
+        owner=os.environ["RETHLAS_OWNER"], run_id=os.environ["RETHLAS_RUN_ID"],
+        domain=os.environ["RETHLAS_DOMAIN"], request_id=request_id, timeout=timeout_seconds,
+    )
 
 
 def memory_init(
@@ -388,7 +338,12 @@ def branch_update(
     return memory_append(problem_id, "branch_states", payload)
 
 
-def build_mcp_app() -> Optional[Any]:
+def build_mcp_app(managed_config: Optional[Path] = None) -> Optional[Any]:
+    if managed_config is not None:
+        from rethlas_core.project_mcp import build_mcp_app as managed_app
+        return managed_app(managed_config)
+    from rethlas_core.mcp_gate import require_managed_worker
+    require_managed_worker()
     if FastMCP is None:
         return None
 
@@ -448,15 +403,26 @@ def build_mcp_app() -> Optional[Any]:
     return app
 
 
-APP = build_mcp_app()
-
-
-def main() -> None:
-    if APP is None:
-        raise SystemExit(
-            "fastmcp is not installed. Install requirements from mcp/requirements.txt first."
-        )
-    APP.run()
+def main(argv=None) -> None:
+    from rethlas_core.project_mcp import _Parser
+    from rethlas_core.private_fs import canonical_json
+    import sys
+    try:
+        parser = _Parser(prog="rethlas-generation-mcp")
+        parser.add_argument("--managed-config", type=Path)
+        args = parser.parse_args(argv)
+    except Exception as exc:
+        print(canonical_json({"status": "rejected", "error": type(exc).__name__}).decode(), file=sys.stderr)
+        raise SystemExit(2) from None
+    if args.managed_config is not None:
+        from rethlas_core.project_mcp import main as managed_main
+        raise SystemExit(managed_main(["--config", str(args.managed_config)]))
+    from rethlas_core.mcp_gate import require_managed_worker
+    require_managed_worker()
+    app = build_mcp_app()
+    if app is None:
+        raise SystemExit("Install the shared runtime's MCP dependencies first.")
+    app.run()
 
 
 if __name__ == "__main__":

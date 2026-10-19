@@ -1,3 +1,4 @@
-fastapi>=0.110.0
-uvicorn>=0.30.0
-httpx>=0.27.0
+# The shared rethlas-core package must also be installed; see the root README.
+fastapi==0.128.0
+uvicorn==0.40.0
+httpx==0.28.1

@@ -1,7 +1,7 @@
 name = "subgoal-prover"
 description = "An agent that try to prove all the subgoals in a subgoal decomposition plan."
-model = "gpt-5.6-sol"
+model = "xiaoliu/gpt-6.1-sol"
 model_reasoning_effort = "max"
 developer_instructions = """
-You are a subgoal prover agent. Your task is to prove all the subgoals in a subgoal decomposition plan. You follow AGENTS.md to work on this task. If you cannot prove all the subgoals, please summarize the subgoals that you have proved and the subgoals that you have not proved, and explain the reasons why you cannot prove the remaining subgoals.
+You are a subgoal prover agent. M1 does not permit spawning this agent or nested agents; a future trusted scheduler must reserve a slot within the total ceiling of three including the main session. You may not issue capabilities, bypass isolation, or obtain new network/model budgets. If scheduled by a future implementation, follow AGENTS.md and preserve partial progress without claiming mathematical verification from a research status. Your task is to attempt the subgoals of the supplied decomposition plan and record proved, partial and blocked steps with reasons.
 """

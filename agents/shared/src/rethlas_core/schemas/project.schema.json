@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ResearchProjectProtocol",
+  "description": "Research project control plane. A project is one visibility scope; candidate storage never certifies mathematical truth.",
+  "$defs": {
+    "hash": {"type":"string","pattern":"^[0-9a-f]{64}$"},
+    "id": {"type":"string","minLength":1,"maxLength":4096,"pattern":"\\S"},
+    "scope": {"type":"string","pattern":"^(?!\\.{1,2}$)[A-Za-z0-9_.-]{1,128}$"},
+    "count": {"type":"integer","minimum":0,"maximum":1048576},
+    "ref": {"type":"object","additionalProperties":false,"required":["entity_id","revision_id","body_sha256"],"properties":{
+      "entity_id":{"$ref":"#/$defs/id"},"revision_id":{"$ref":"#/$defs/id"},"body_sha256":{"$ref":"#/$defs/hash"}}},
+    "refs": {"type":"array","maxItems":256,"uniqueItems":true,"items":{"$ref":"#/$defs/ref"}},
+    "checkpoint": {"type":"object","additionalProperties":false,"required":["head","generation","graph_sha256"],"properties":{
+      "head":{"$ref":"#/$defs/hash"},"generation":{"type":"integer","minimum":0,"maximum":64},"graph_sha256":{"$ref":"#/$defs/hash"}}},
+    "config": {"type":"object","additionalProperties":false,"required":["version","service_id","owner","domain","policy_hash","store_id","store_config_sha256","genesis"],"properties":{
+      "version":{"const":"project-1"},"service_id":{"$ref":"#/$defs/hash"},"owner":{"$ref":"#/$defs/scope"},"domain":{"const":"research"},
+      "policy_hash":{"$ref":"#/$defs/hash"},"store_id":{"$ref":"#/$defs/hash"},"store_config_sha256":{"$ref":"#/$defs/hash"},"genesis":{"$ref":"#/$defs/checkpoint"}}},
+    "withdraw": {"type":"object","additionalProperties":false,"required":["version","request_id","targets","reason"],"properties":{
+      "version":{"const":"project-1"},"request_id":{"$ref":"#/$defs/id"},"targets":{"type":"array","minItems":1,"maxItems":32,"uniqueItems":true,"items":{"$ref":"#/$defs/ref"}},
+      "reason":{"type":"string","minLength":1,"maxLength":4096}}},
+    "identity": {"type":"object","additionalProperties":false,"required":["owner","run_id","domain","role","epoch","resource"],"properties":{
+      "owner":{"$ref":"#/$defs/scope"},"run_id":{"$ref":"#/$defs/scope"},"domain":{"const":"research"},
+      "role":{"enum":["operator","project_reader","project_writer","project_withdrawer","research_runner"]},"epoch":{"$ref":"#/$defs/count"},"resource":{"$ref":"#/$defs/scope"}}},
+    "binding": {"type":"object","additionalProperties":false,"required":["request_id","operation_sha256","identity","kind","bucket","status","result"],"properties":{
+      "request_id":{"$ref":"#/$defs/id"},"operation_sha256":{"$ref":"#/$defs/hash"},"identity":{"$ref":"#/$defs/identity"},
+      "kind":{"enum":["commit","withdraw","research","egress"]},"bucket":{"enum":["ordinary","withdraw","recovery"]},
+      "status":{"enum":["bound","started","committed","accepted","withdrawn","aborted"]},"result":{"type":"object","maxProperties":24}}},
+    "event": {"type":"object","additionalProperties":false,"required":["event_id","sequence","kind","request_key"],"properties":{
+      "event_id":{"$ref":"#/$defs/hash"},"sequence":{"$ref":"#/$defs/count"},"kind":{"enum":["ADMISSION","REQUEST_BOUND","RUN_BOUND","GRAPH_PREPARE","GRAPH_ACCEPT","GRAPH_ABORT","WITHDRAW","RECOVERY","PREPARED_ABORT","EGRESS_STARTED","EGRESS_FINISHED","RESEARCH_STARTED","RESEARCH_PROGRESS","RESEARCH_FINISHED"]},
+      "request_key":{"oneOf":[{"$ref":"#/$defs/hash"},{"type":"null"}]}}},
+    "run": {"type":"object","additionalProperties":false,"required":["role","resource"],"properties":{
+      "role":{"enum":["project_reader","project_writer","project_withdrawer","research_runner"]},"resource":{"$ref":"#/$defs/scope"}}},
+    "pending_graph": {"type":"object","additionalProperties":false,"required":["request_key","operation_sha256","parent"],"properties":{
+      "request_key":{"$ref":"#/$defs/hash"},"operation_sha256":{"$ref":"#/$defs/hash"},"parent":{"$ref":"#/$defs/checkpoint"}}},
+    "state": {"type":"object","additionalProperties":false,"required":["version","service_id","config_sha256","sequence","events","requests","accepted_graph","pending_graph","uses","probes","publications","runs","counts","withdrawal_version"],"properties":{
+      "version":{"const":"project-1"},"service_id":{"$ref":"#/$defs/hash"},"config_sha256":{"$ref":"#/$defs/hash"},
+      "sequence":{"type":"integer","minimum":0,"maximum":512},"withdrawal_version":{"type":"integer","minimum":0,"maximum":32},
+      "events":{"type":"array","maxItems":512,"items":{"$ref":"#/$defs/event"}},
+      "requests":{"type":"object","maxProperties":256,"propertyNames":{"$ref":"#/$defs/hash"},"additionalProperties":{"$ref":"#/$defs/binding"}},
+      "accepted_graph":{"$ref":"#/$defs/checkpoint"},"pending_graph":{"oneOf":[{"$ref":"#/$defs/pending_graph"},{"type":"null"}]},
+      "uses":{"type":"object","maxProperties":0},"probes":{"type":"object","maxProperties":0},"publications":{"type":"object","maxProperties":0},
+      "runs":{"type":"object","maxProperties":32,"propertyNames":{"$ref":"#/$defs/scope"},"additionalProperties":{"$ref":"#/$defs/run"}},
+      "counts":{"type":"object","maxProperties":96,"propertyNames":{"type":"string","maxLength":160},"additionalProperties":{"$ref":"#/$defs/count"}}}},
+    "anchor": {"type":"object","additionalProperties":false,"required":["version","service_id","config_sha256","phase","sequence","state_sha256","transition_sha256","next_sequence","next_sha256"],"properties":{
+      "version":{"const":"project-1"},"service_id":{"$ref":"#/$defs/hash"},"config_sha256":{"$ref":"#/$defs/hash"},"phase":{"enum":["stable","pending"]},
+      "sequence":{"$ref":"#/$defs/count"},"state_sha256":{"$ref":"#/$defs/hash"},"transition_sha256":{"oneOf":[{"$ref":"#/$defs/hash"},{"type":"null"}]},
+      "next_sequence":{"oneOf":[{"$ref":"#/$defs/count"},{"type":"null"}]},"next_sha256":{"oneOf":[{"$ref":"#/$defs/hash"},{"type":"null"}]}}},
+    "transition": {"type":"object","additionalProperties":false,"required":["version","service_id","config_sha256","prev_sequence","prev_sha256","next_sequence","next_sha256","kind","request_key","authorization","next_state"],"properties":{
+      "version":{"const":"project-1"},"service_id":{"$ref":"#/$defs/hash"},"config_sha256":{"$ref":"#/$defs/hash"},
+      "prev_sequence":{"$ref":"#/$defs/count"},"prev_sha256":{"$ref":"#/$defs/hash"},"next_sequence":{"$ref":"#/$defs/count"},"next_sha256":{"$ref":"#/$defs/hash"},
+      "kind":{"type":"string","maxLength":32},"request_key":{"oneOf":[{"$ref":"#/$defs/hash"},{"type":"null"}]},
+      "authorization":{"oneOf":[{"type":"object","minProperties":10,"maxProperties":10},{"type":"null"}]},"next_state":{"$ref":"#/$defs/state"}}},
+    "checked_at": {"type":"object","additionalProperties":false,"required":["control_sequence","withdrawal_version","graph_head","policy_hash"],"properties":{
+      "control_sequence":{"$ref":"#/$defs/count"},"withdrawal_version":{"$ref":"#/$defs/count"},"graph_head":{"$ref":"#/$defs/hash"},"policy_hash":{"$ref":"#/$defs/hash"}}}
+  }
+}

@@ -43,3 +43,20 @@ agents/verification/results/
 agents/generation/site/public/
 agents/generation/site/themes/
 agents/generation/site/content/*/
+
+# Local historical archives and progress ledgers (not source distribution)
+/docs/evidence/
+/docs/milestones/
+/docs/implementation-status.graph.json
+/docs/implementation-status.md
+/docs/acceptance.md
+
+# Local private runtime roots and packaging caches
+/.runtime/
+/.private/
+/.cache/
+/build/
+/dist/
+/agents/shared/build/
+/agents/shared/dist/
+/agents/shared/src/*.egg-info/

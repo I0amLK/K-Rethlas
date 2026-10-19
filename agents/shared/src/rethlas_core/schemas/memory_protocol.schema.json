@@ -1,0 +1,135 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "MemoryStoreProtocolM2a",
+  "description": "Private single-host storage protocol. Prepared receipts are NOT commits; only the validated manifest parent chain confers visibility.",
+  "$defs": {
+    "hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "text": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "\\S"},
+    "scope_id": {"type": "string", "pattern": "^[A-Za-z0-9_.-]{1,128}$", "not": {"enum": [".", ".."]}},
+    "domain": {"enum": ["fixture", "production", "research"]},
+    "limits": {
+      "type": "object", "additionalProperties": false,
+      "required": ["request_bytes", "body_bytes", "graph_bytes", "exchange_bytes", "entries", "history", "receipts", "journal_bytes", "quarantine_files", "store_bytes", "files"],
+      "properties": {
+        "request_bytes": {"type": "integer", "minimum": 256, "maximum": 524288},
+        "body_bytes": {"type": "integer", "minimum": 1, "maximum": 131072},
+        "graph_bytes": {"type": "integer", "minimum": 512, "maximum": 2097152},
+        "exchange_bytes": {"type": "integer", "minimum": 512, "maximum": 8388608},
+        "entries": {"type": "integer", "minimum": 1, "maximum": 1024},
+        "history": {"type": "integer", "minimum": 1, "maximum": 256},
+        "receipts": {"type": "integer", "minimum": 1, "maximum": 256},
+        "journal_bytes": {"const": 16384},
+        "quarantine_files": {"type": "integer", "minimum": 1, "maximum": 32},
+        "store_bytes": {"type": "integer", "minimum": 65536, "maximum": 268435456},
+        "files": {"type": "integer", "minimum": 32, "maximum": 8192}
+      }
+    },
+    "store": {
+      "type": "object", "additionalProperties": false,
+      "required": ["format_version", "operation_version", "store_id", "owner", "domain", "limits"],
+      "properties": {
+        "format_version": {"const": "m2a-1"}, "operation_version": {"const": 1},
+        "store_id": {"$ref": "#/$defs/hash"}, "owner": {"$ref": "#/$defs/scope_id"},
+        "domain": {"$ref": "#/$defs/domain"}, "limits": {"$ref": "#/$defs/limits"}
+      }
+    },
+    "request": {
+      "type": "object", "additionalProperties": false,
+      "required": ["version", "request_id", "expected_head", "entities", "revisions", "relations", "evidence"],
+      "properties": {
+        "version": {"const": 1}, "request_id": {"$ref": "#/$defs/text"}, "expected_head": {"$ref": "#/$defs/hash"},
+        "entities": {"type": "array", "items": {"type": "object"}},
+        "revisions": {"type": "array", "items": {"type": "object"}},
+        "relations": {"type": "array", "items": {"type": "object"}},
+        "evidence": {"type": "array", "items": {"type": "object"}}
+      }
+    },
+    "manifest": {
+      "type": "object", "additionalProperties": false,
+      "required": ["format_version", "store_id", "generation", "graph_sha256", "receipt_key", "receipt_sha256", "parent_head", "head"],
+      "properties": {
+        "format_version": {"const": "m2a-1"}, "store_id": {"$ref": "#/$defs/hash"},
+        "generation": {"type": "integer", "minimum": 0, "maximum": 256},
+        "graph_sha256": {"$ref": "#/$defs/hash"},
+        "receipt_key": {"anyOf": [{"type": "null"}, {"$ref": "#/$defs/hash"}]},
+        "receipt_sha256": {"anyOf": [{"type": "null"}, {"$ref": "#/$defs/hash"}]},
+        "parent_head": {"anyOf": [{"type": "null"}, {"$ref": "#/$defs/hash"}]},
+        "head": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "binding": {
+      "type": "object", "additionalProperties": false,
+      "required": ["store_id", "owner", "run_id", "domain", "epoch", "operation_version", "config_sha256", "request_id", "request_digest", "expected_head"],
+      "properties": {
+        "store_id": {"$ref": "#/$defs/hash"}, "owner": {"$ref": "#/$defs/scope_id"},
+        "run_id": {"$ref": "#/$defs/scope_id"}, "domain": {"$ref": "#/$defs/domain"},
+        "epoch": {"type": "integer", "minimum": 0}, "operation_version": {"const": 1},
+        "config_sha256": {"$ref": "#/$defs/hash"}, "request_id": {"$ref": "#/$defs/text"},
+        "request_digest": {"$ref": "#/$defs/hash"}, "expected_head": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "receipt": {
+      "type": "object", "additionalProperties": false,
+      "required": ["format_version", "request_key", "binding", "parent_manifest", "generation", "graph_sha256"],
+      "properties": {
+        "format_version": {"const": "m2a-1"}, "request_key": {"$ref": "#/$defs/hash"},
+        "binding": {"$ref": "#/$defs/binding"}, "parent_manifest": {"$ref": "#/$defs/manifest"},
+        "generation": {"type": "integer", "minimum": 1, "maximum": 256},
+        "graph_sha256": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "frame": {
+      "type": "object", "additionalProperties": false,
+      "required": ["format_version", "index", "kind", "request_key", "request_digest", "parent_head", "result_head", "previous_sha256", "sha256"],
+      "properties": {
+        "format_version": {"const": "m2a-1"}, "index": {"type": "integer", "minimum": 0, "maximum": 2},
+        "kind": {"enum": ["INTENT", "PREPARED", "HEAD_OBSERVED"]},
+        "request_key": {"$ref": "#/$defs/hash"}, "request_digest": {"$ref": "#/$defs/hash"},
+        "parent_head": {"$ref": "#/$defs/hash"}, "result_head": {"$ref": "#/$defs/hash"},
+        "previous_sha256": {"anyOf": [{"type": "null"}, {"$ref": "#/$defs/hash"}]},
+        "sha256": {"$ref": "#/$defs/hash"}
+      }
+    },
+    "graph": {
+      "type": "object", "additionalProperties": false,
+      "required": ["format_version", "math_schema_version", "entities", "revisions", "relations", "evidence"],
+      "properties": {
+        "format_version": {"const": "m2a-graph-1"}, "math_schema_version": {"const": "1.0"},
+        "entities": {"type": "array", "maxItems": 1024, "items": {"type": "object"}},
+        "relations": {"type": "array", "maxItems": 1024, "items": {"type": "object"}},
+        "evidence": {"type": "array", "maxItems": 1024, "items": {"type": "object"}},
+        "revisions": {"type": "array", "maxItems": 1024, "items": {
+          "type": "object", "additionalProperties": false,
+          "required": ["entity_id", "revision_id", "body_sha256", "provenance", "assertion_state", "validity", "context_revision_ids", "evidence_ids"],
+          "properties": {
+            "entity_id": {"type": "string", "minLength": 1}, "revision_id": {"type": "string", "minLength": 1},
+            "body_sha256": {"$ref": "#/$defs/hash"}, "provenance": {"type": "object"},
+            "assertion_state": {"const": "candidate"}, "validity": {"const": "needs_review"},
+            "context_revision_ids": {"type": "array", "items": {"type": "string"}},
+            "evidence_ids": {"type": "array", "items": {"type": "string"}},
+            "review_kind": {"type": "string"}, "review_bindings": {"type": "array"},
+            "research_progress": {"type": "string"}, "historical_status": {"type": "string"}
+          }
+        }}
+      }
+    },
+    "projection": {
+      "type": "object", "additionalProperties": false,
+      "required": ["format_version", "kind", "store_id", "head", "generation", "revisions"],
+      "properties": {
+        "format_version": {"const": "m2a-1"}, "kind": {"const": "ids-only-not-retrieval"},
+        "store_id": {"$ref": "#/$defs/hash"}, "head": {"$ref": "#/$defs/hash"},
+        "generation": {"type": "integer", "minimum": 0, "maximum": 256},
+        "revisions": {"type": "array", "maxItems": 1024, "items": {
+          "type": "object", "additionalProperties": false,
+          "required": ["entity_id", "revision_id", "body_sha256"],
+          "properties": {
+            "entity_id": {"type": "string", "minLength": 1},
+            "revision_id": {"type": "string", "minLength": 1},
+            "body_sha256": {"$ref": "#/$defs/hash"}
+          }
+        }}
+      }
+    }
+  }
+}

@@ -1,69 +1,31 @@
 ---
 name: verify-proof
-description: Verify candidate proofs with the local proof verification MCP service. Use only when a full candidate proof of the entire problem has been assembled in markdown, and before publishing the final verified blueprint.
+description: Submit a complete candidate to the trusted local verifier; only a current production receipt may establish review status.
 ---
 
 # Verify Proof
 
-Use the local proof verification service as the canonical verifier before accepting a solution.
-Do not use this skill for partial proofs, isolated subgoals, or branches that have not yet produced a full proof draft of the whole problem.
-
 ## Input Contract
 
-Read:
-
-- target theorem statement
-- assembled proof blueprint candidate from `results/{problem_id}/blueprint.md` as pure markdown text
-- relevant prior failure reports and branch context
+Read the full original target statement, complete candidate `results/{problem_id}/blueprint.md`, and relevant prior failure reports. Do not submit partial branches or isolated lemmas as complete solutions.
 
 ## Procedure
 
-1. Read the current `results/{problem_id}/blueprint.md` draft as pure text.
-2. First check that `blueprint.md` contains a full proof draft of the entire target theorem rather than a partial proof, fragment, or exploratory notes. If it does not, do not call the verifier yet.
-3. Call MCP tool `verify_proof_service` with:
-   - `statement`: target informal statement
-   - `proof`: the raw markdown text from `blueprint.md`
-4. Read `verification_report.summary`, `critical_errors`, `gaps`, `verdict`, and `repair_hints`.
-5. Return and persist exactly what the verification service returns. Do not rename keys, add keys, or change the JSON structure.
-6. Treat the proof as failed if any of the following hold:
-   - `verdict` is `"wrong"`
-   - `verification_report.critical_errors` is non-empty
-   - `verification_report.gaps` is non-empty
-7. Only treat the proof as passed when none of the failure conditions above hold.
-8. If the proof passes, rename `results/{problem_id}/blueprint.md` to `results/{problem_id}/blueprint_verified.md`.
+1. Confirm the draft includes a full proof of the target, with expanded definitions, assumptions and exact external references.
+2. Call `verify_proof_service(statement=..., proof=...)` only through a controller-issued run identity and capability. The model cannot choose another endpoint, mint a token, change domains, or obtain approval by writing a file.
+3. Preserve the **complete** returned response: the original report fields plus binding envelope, verification kind, status and receipt. Never project away provenance.
+4. Any `wrong`, critical error or gap requires repair. A contract-valid `wrong` is an ordinary negative business result.
+5. A `correct` report alone does not establish completion. Only the controller may verify the signed current-input production receipt, recheck dependencies and publish frozen bytes.
+6. Do not rename `blueprint.md` to `blueprint_verified.md`. Legacy files have no review authority.
+7. `verification_kind=fixture` / `fixture_completed` is a synthetic protocol test, **never** LLM-reviewed, verified or solved. M1's live provider broker is unavailable; record this limitation instead of bypassing it.
+8. Stop at cancellation, finite deadline, unavailable isolation or exhausted budget. Do not open an alternative network/CLI path.
 
 ## Output Contract
 
-Append to `verification_reports`:
-
-```json
-{
-  "verification_report": {
-    "summary": "string",
-    "critical_errors": [
-      {"location": "", "issue": "detailed description of the issue"}
-    ],
-    "gaps": [
-      {"location": "", "issue": "detailed description of the gap"}
-    ]
-  },
-  "verdict": "string",
-  "repair_hints": "string"
-}
-```
-
-Persist the verification service response exactly as returned.
-
-If verification fails, revise `blueprint.md` directly and append to `failed_paths` when a branch is invalidated.
+Append the unchanged full service response to `verification_reports`. Keep the working draft for repair. Preserve failed approaches in `failed_paths`; maintain branch state without promoting research `solved` into mathematical trust.
 
 ## MCP Tools
 
 - `verify_proof_service`
-- `memory_append`
-- `memory_search`
-- `branch_update`
-- Codex built-in web search and `search_arxiv_theorems` when the verifier identifies a missing lemma or gap
-
-## Failure Logging
-
-Always persist verification output, including successful checks.
+- `memory_append`, `memory_search`, `branch_update`
+- External search only under a separately authorized trusted egress policy

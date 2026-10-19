@@ -1,47 +1,32 @@
 #!/usr/bin/env python3
-
+"""Manual synthetic local verifier check. Requires an operator-issued capability."""
 from __future__ import annotations
 
-import json
+import argparse
+from pathlib import Path
 import sys
 
-import requests
-
-
-API_URL = "http://127.0.0.1:8091/verify"
-
-# Fill these before running the script.
-STATEMENT = ""
-PROOF = """
-"""
+from rethlas_core.client import verify_via_local_service
+from rethlas_core.private_fs import canonical_json
 
 
 def main() -> int:
-    if not STATEMENT.strip():
-        print("Set STATEMENT in scripts/test_verify_endpoint.py before running.", file=sys.stderr)
-        return 1
-
-    if not PROOF.strip():
-        print("Set PROOF in scripts/test_verify_endpoint.py before running.", file=sys.stderr)
-        return 1
-
-    payload = {
-        "statement": STATEMENT,
-        "proof": PROOF,
-    }
-
-    response = requests.post(API_URL, json=payload, timeout=3600)
-
-    print(f"POST {API_URL}")
-    print(f"Status: {response.status_code}")
-
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--token-file", type=Path, required=True)
+    parser.add_argument("--owner", required=True)
+    parser.add_argument("--run-id", required=True)
+    parser.add_argument("--endpoint", default="http://127.0.0.1:8091/verify")
+    args = parser.parse_args()
     try:
-        body = response.json()
-    except ValueError:
-        print(response.text)
-        return 0
-
-    print(json.dumps(body, indent=2, ensure_ascii=False))
+        result = verify_via_local_service(
+            "Synthetic endpoint-test statement.", "Synthetic body; no mathematical review.",
+            endpoint=args.endpoint, token_file=args.token_file, owner=args.owner,
+            run_id=args.run_id, domain="fixture", request_id="manual-fixture-check",
+        )
+        print(canonical_json(result).decode())
+    except (OSError, ValueError):
+        print("Local verifier check rejected; no fallback was attempted.", file=sys.stderr)
+        return 1
     return 0
 
 

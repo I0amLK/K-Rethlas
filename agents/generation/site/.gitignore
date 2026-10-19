@@ -3,4 +3,5 @@ public/
 __pycache__/
 # Generated chapters (synced from results/ at serve time)
 content/*/
+content/.rethlas-generated.json
 __pycache__/

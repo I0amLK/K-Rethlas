@@ -1,2 +1,3 @@
-fastmcp>=2.0.0
-requests>=2.31.0
+# The shared rethlas-core package must also be installed; see the root README.
+mcp==1.30.0
+requests==2.32.5

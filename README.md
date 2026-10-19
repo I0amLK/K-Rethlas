@@ -1,220 +1,51 @@
-# Rethlas
+# K-Rethlas
 
-Rethlas is a natural-language reasoning system for mathematics built around two Codex agents:
+K-Rethlas 是 [Rethlas](https://github.com/frenzymath/Rethlas) 的开发 fork，用于受管的数学研究、候选生成与独立审查。Fork 仓库：[I0amLK/K-Rethlas](https://github.com/I0amLK/K-Rethlas)。保留上游来源与 [Apache-2.0 许可证](LICENSE)；Python 包仍为 **`rethlas-core==0.1.0`**，不是新稳定版或 release。
 
-- The generation agent reads a math problem from a markdown file and writes an informal proof blueprint.
-- The verification agent checks that proof blueprint, produces a structured verdict, and serves as the generation agent's verifier.
+**当前入口是 CLI / MCP，无需 TUI。** TUI 按用户决定保持 `withdrawn_by_user`，共享核心没有回滚。Markdown 保存完整数学正文，typed JSON Graph 管理身份、修订、证据与生命周期；BGE-M3 仅为可重建检索投影，不是第二知识权威。
 
-The intended deployment order is:
+## 安装与最小入口
 
-1. Start the verification agent as a local HTTP service.
-2. Run the generation agent through Codex.
-3. Let the generation agent call the verification service during its proof-and-repair loop.
-
-## Repository Layout
-
-- `agents/generation`: the proof-generation agent
-- `agents/verification`: the proof-verification agent
-
-In particular, 
-- Original problems are put in `agents/generation/data/`, e.g. unclassified problem `agents/generation/data/example.md`, or classfied problem `agents/generation/data/modrep/modrep.md`, `agents/generation/data/example/example1.md`.
-- Zola project to render the results in a static website is in `agents/generation/site/`.
-
-## 1. Install Codex CLI
-
-Install the Codex CLI:
+需要 Python 3.12+。以下是供操作者审阅后在**全新环境**执行的示例，不会在当前工作区自动运行。构建依赖为 `setuptools==80.9.0`，基础依赖为 `jsonschema==4.26.0`；`server,mcp,sources` 的精确版本见 [pyproject.toml](agents/shared/pyproject.toml)。普通 pip 安装会从操作者配置的包索引解析、可能联网下载依赖；离线验收只能使用已审查的本地 wheel/缓存，缺项则停止，不联网补装。
 
 ```bash
-npm install -g @openai/codex
+python3.12 -m venv /absolute/new/runtime
+/absolute/new/runtime/bin/python -I -m pip install './agents/shared[server,mcp,sources]'
+/absolute/new/runtime/bin/python -I -B -m rethlas_core.research_cli --help
+/absolute/new/runtime/bin/python -I -B -m rethlas_core.research_cli start --help
 ```
 
+安装示例在源码根目录执行；安装后模块入口可在源码树外使用，不设置 `PYTHONPATH`。`tools/research.py` 是已安装模块的薄 wrapper，不是免安装启动器。原生路径还要求操作者自行准备兼容 Codex CLI；应用不会自动安装或登录。**PATH 能找到 CLI 不等于通过安装物 SHA-256 gate，也不保证跨平台/任意版本兼容。**
 
-## 2. Clone the Repository
+对一个全新的仓库外私有路径和公开/合成问题：
 
 ```bash
-git clone https://github.com/frenzymath/Rethlas.git
-cd Rethlas
+/absolute/new/runtime/bin/python -I -B -m rethlas_core.research_cli start \
+  /absolute/private/new-project --question-file /absolute/input/synthetic-question.md
+# 已有项目不加 --continue：只读历史，不自动续办
+/absolute/new/runtime/bin/python -I -B -m rethlas_core.research_cli start /absolute/private/new-project
 ```
 
-## 3. Start the Verification Service
+新建会写本地项目、权限文件与问题记录；不是纯只读命令。原生研究有**轮次策略、生成实际输入、审查实际输入**三个分阶段确认，均默认拒绝，非交互输入也拒绝。明确批准实际输入后可能启动模型；不得把文档、安装或开发验收当成真实研究授权。
 
+生成与审查可独立选择 `--generation-model/--generation-effort`、`--review-model/--review-effort`。全部可省略；省略不覆盖 CLI 默认，实际 model/effort/provider/destination 仍是 **unknown inherited**，不能从仓库开发模型路由推断。完整操作、续签和边界见 [用户指南](docs/user-guide.md)。
 
-```bash
-cd agents/verification
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-uvicorn api.server:app --host 0.0.0.0 --port 8091
-```
+## 当前状态与限制
 
-Using uv
-```bash
-cd agents/verification
-uv venv 
-uv pip install -r requirements.txt
-uv run uvicorn api.server:app --host 0.0.0.0 --port 8091
-```
+- 共享核心已包含持久记忆、显式迁移、冻结分支视图、撤回传播、项目检索、研究 history/status、来源/PDF/URL API、受管 MCP，以及 `research-client-4` / `codex_cli_native`。
+- 原生每轮最多 2 次启动、每用途 1 次；每次 300 秒，stdin/最终消息各 16 KiB，stdout+stderr 合计 1 MiB。失败不退款、不重发；这些不是上游 HTTP/token/费用硬限。
+- CLI 原生工具、用户配置、MCP/hooks 会进入信任边界；关闭内置 multi-agent 不证明任意扩展均被拦截。模型 `correct`、fixture 通过和文件名均不等于数学认证。
+- **历史本地记录**：产品回归 788 项 / 538.310 秒；恢复执行器另有 25 项合成结果且已 accepted。两者范围不同，不相加，也不代表本候选已验证。末次真实研究未生成结果，随后用户决定“停止，保留现状”；此决定继续有效，不恢复旧项目或创建真实恢复 claim。
+- **本次候选**：第 1 阶段仅文档/分发冻结与有限静态检查；构建、独立安装、600 秒完整 suite 和合成入口验收均 **phase B pending**。真实生成→fresh review→保存/重开闭环、人工/数学审查和 release-ready 均未证实。
 
-## 4. Run the Generation Agent on the Included Example
+详见 [运行状态与已知限制](docs/runtime-status.md)。历史证据、里程碑、Graph/进度账本保持在原工作区，不随本源码候选分发；此入口不依赖它们的本地链接。
 
+## 源码布局
 
-```bash
-cd agents/generation
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r mcp/requirements.txt
-./tests/run_example.sh
-```
+- [agents/shared](agents/shared)：可安装共享核心与 8 份包内 schema。
+- [agents/generation](agents/generation)、[agents/verification](agents/verification)：上游工作流、原问题材料和受保护的兼容入口；旧 launcher 不恢复。
+- [tests](tests)：产品与合成回归，包含 TUI 撤回后共享后端测试。
+- [tools](tools)：薄 wrapper、静态检查和原字节保留的历史验收工具。
+- [合成示例](docs/examples/README.md)：无真实凭据的协议样例。
 
-This script:
-
-- reads `agents/generation/data/example.md`
-- runs `codex exec` inside `agents/generation`
-- resumes the same Codex session for up to `MAX_ITERATIONS` iterations, alternating search-disabled and search-enabled continuation turns
-- stops when `agents/generation/results/example/blueprint_verified.md` is produced
-- writes iteration logs to `agents/generation/logs/example/iter/`
-- writes memory artifacts to `agents/generation/memory/example/`
-- writes the draft proof to `agents/generation/results/example/blueprint.md`
-- writes the verified proof to `agents/generation/results/example/blueprint_verified.md` if verification succeeds
-
-You can set the maximum number of iterations:
-
-```bash
-MAX_ITERATIONS=10 ./tests/run_example.sh
-```
-
-## 5. Run Your Own Problem
-
-Put your problem in a markdown file under `agents/generation/data/`. Save that as:
-
-```text
-agents/generation/data/my_problem.md
-```
-
-Then run:
-
-```bash
-cd agents/generation
-source .venv/bin/activate
-PROBLEM_FILE=data/my_problem.md ./tests/run_example.sh
-```
-
-You can group problems in subdirectories under `data/` and the generated artifacts preserve that structure. For example:
-
-```bash
-PROBLEM_FILE=data/modrep/modrep.md ./tests/run_example.sh
-```
-
-To attach user-provided references to a problem (this is optional; use it when you are working on your own research problem and want to provide the agent with unreleased notes), create a sibling reference directory with the same stem:
-
-```text
-agents/generation/data/modrep/modrep.refs/
-```
-
-When that directory exists, the generation agent reads its files before using external search.
-Reference files may be markdown, LaTeX, plain text, or PDF, but markdown, LaTeX and plain text is prefered over PDF. Actually, PDFs are converted to extracted text under `.extracted/` before the agent runs.
-
-The runner writes:
-
-- iterations to `logs/<problem_id>/iter/`
-- durable memory to `memory/<problem_id>/`
-- drafts and accepted output to `results/<problem_id>/`
-
-It never overwrites an existing iteration log.
-
-`CODEX_HOME` selects the Codex home used by the wrapper; it otherwise uses `$HOME/.codex`.
-
-## 6. Dry run
-
-Validate paths, settings, prior logs, recovered session ID, next iteration, and pause/stop locations without starting Codex or contacting the verifier:
-
-```sh
-DRY_RUN=1 PROBLEM_FILE=data/example.md ./tests/run_example.sh
-```
-
-`DRY_RUN` must be `0` or `1`.
-
-## 7. Resume
-
-Run the same command again. The runner scans existing iteration logs, finds the next unused iteration number, recovers the Codex session ID, and resumes that session. `MAX_ITERATIONS` is the number of additional iterations for this invocation.
-
-```sh
-MAX_ITERATIONS=4 PROBLEM_FILE=data/example.md ./tests/run_example.sh
-```
-
-If logs contain no recoverable session ID or conflicting IDs, the run fails closed. Supply the intended session explicitly only when you have checked it:
-
-```sh
-SESSION_ID=replace_with_session_id PROBLEM_FILE=data/example.md ./tests/run_example.sh
-```
-
-Use `LOG_DIR` only when deliberately selecting a different log history.
-
-## 8. Pause after the active iteration
-
-While the runner is active, create its pause marker from another terminal:
-
-```sh
-mkdir -p agents/generation/results/example
-touch agents/generation/results/example/PAUSE_AFTER_ITERATION
-```
-
-The current Codex invocation is allowed to finish, then the loop stops before another iteration. Remove the marker before resuming:
-
-```sh
-rm agents/generation/results/example/PAUSE_AFTER_ITERATION
-```
-
-Set `PAUSE_FILE` to use a different marker. A marker already present at startup is treated as an error so a stale pause cannot silently look like a successful run.
-
-## 9. Search schedule and completion
-
-After the initial turn, odd-numbered iterations disable web and arXiv search; even-numbered iterations allow search. Resumed runs retain this iteration-number schedule. The runner exits successfully when `blueprint_verified.md` exists, or when a requested pause is observed. Exhausting the added iteration budget without a verified proof exits nonzero.
-
-The wrapper invokes Codex with approval and sandbox bypass. Run it only in a checkout and environment you trust, and review the agent instructions and MCP configuration first.
-
-## 10. View Results in the Browser
-
-- `agents/generation/site`: Zola site for browsing results in the browser
-
-Results are markdown files with LaTeX math. To render them properly, a local [Zola](https://www.getzola.org/) site using the [MATbook](https://www.getzola.org/themes/matbook/) theme is included.
-
-### Prerequisites
-
-Install Zola.
-
-Zola can be easily installed using your package manager in terminal. For example, on Mac, you simply run
-
-```bash
-brew install zola
-```
-
-and on ArchLinux, run
-
-```bash
-sudo pacman -S zola
-```
-
-For other operating systems, please see [Zola installation](https://www.getzola.org/documentation/getting-started/installation/).
-
-### Serve
-
-From `agents/generation/`:
-
-```bash
-./site/serve.sh
-```
-
-On first run this automatically clones the [MATbook](https://www.getzola.org/themes/matbook/) theme. Then it syncs all results from `results/` into the site and starts a local server. Open http://localhost:3264 in your browser.
-
-Each problem  in `agents/generation/data/your_category`  will be a section in a chapter called `your_category`, while problems directly in `agents/generation/data` will be under `unclassified` chapter.
-
-### Update the MATbook Theme
-
-```bash
-./site/setup_theme.sh
-```
-
-This pulls the latest version from the [MATbook repository](https://github.com/srliu3264/MATbook).
-
-
+历史固定 `tools/accept_m2*.py`、`tools/validate_implementation.py` 需要原父工作区的 tools/tests/analysis、参考仓库及本地历史归档，不能作为干净源码副本的通用验收命令。保留的上游 AGENTS、skills 和 site 也可能指向未分发运行材料或外部资源；这些历史前提不是产品运行时依赖，见运行状态说明。

@@ -1,5 +1,5 @@
 from .server import (
-    APP,
+    build_mcp_app,
     branch_update,
     build_problem_id,
     memory_append,
@@ -11,7 +11,7 @@ from .server import (
 )
 
 __all__ = [
-    "APP",
+    "build_mcp_app",
     "branch_update",
     "build_problem_id",
     "memory_append",

@@ -1,0 +1,9 @@
+{
+  "verification_report": {
+    "summary": "Synthetic contract example only; no mathematical review performed.",
+    "critical_errors": [],
+    "gaps": []
+  },
+  "verdict": "correct",
+  "repair_hints": ""
+}
