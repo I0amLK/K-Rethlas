@@ -2,11 +2,15 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import datetime, timezone
+import sys
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, List, Optional
 
 import requests
+
+AGENTS_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(AGENTS_ROOT))
+from memory_graph import MemoryGraph
 
 try:
     from jsonschema import Draft202012Validator
@@ -30,17 +34,17 @@ THEOREM_SEARCH_TASK = (
     "lemmas, and definitions, that are useful for solving the given problem."
 )
 
-CHANNEL_FILES: Dict[str, str] = {
-    "statement_checks": "statement_checks.jsonl",
-    "reference_checks": "reference_checks.jsonl",
-    "verification_reports": "verification_reports.jsonl",
-    "failed_checks": "failed_checks.jsonl",
-    "events": "events.jsonl",
-}
+CHANNELS = (
+    "statement_checks",
+    "reference_checks",
+    "verification_reports",
+    "failed_checks",
+    "events",
+)
 
 
-def _utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+def _memory_store() -> MemoryGraph:
+    return MemoryGraph(MEMORY_ROOT, api_lock_path=AGENTS_ROOT / ".embedding-api.lock")
 
 
 def sanitize_run_id(raw: str) -> str:
@@ -54,33 +58,10 @@ def _run_dir(run_id: str) -> Path:
     return MEMORY_ROOT / sanitize_run_id(run_id)
 
 
-def _channel_path(run_id: str, channel: str) -> Path:
-    if channel not in CHANNEL_FILES:
-        allowed = ", ".join(sorted(CHANNEL_FILES))
+def _validate_channel(channel: str) -> None:
+    if channel not in CHANNELS:
+        allowed = ", ".join(sorted(CHANNELS))
         raise ValueError(f"Unknown channel '{channel}'. Allowed channels: {allowed}")
-    return _run_dir(run_id) / CHANNEL_FILES[channel]
-
-
-def _append_jsonl(path: Path, payload: Dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8") as handle:
-        handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
-
-
-def _iter_jsonl(path: Path) -> Iterable[Dict[str, Any]]:
-    if not path.exists():
-        return
-    with path.open("r", encoding="utf-8") as handle:
-        for line in handle:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                payload = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if isinstance(payload, dict):
-                yield payload
 
 
 def search_arxiv_theorems(
@@ -128,75 +109,32 @@ def search_arxiv_theorems(
 
 
 def memory_init(run_id: str, meta: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    sanitized_run_id = sanitize_run_id(run_id)
-    run_dir = _run_dir(sanitized_run_id)
-    run_dir.mkdir(parents=True, exist_ok=True)
-
-    created_files: Dict[str, str] = {}
-    for channel, filename in CHANNEL_FILES.items():
-        channel_path = run_dir / filename
-        channel_path.touch(exist_ok=True)
-        created_files[channel] = str(channel_path)
-
-    meta_path = run_dir / "meta.json"
-    existing_meta: Dict[str, Any] = {}
-    if meta_path.exists() and meta_path.stat().st_size > 0:
-        with meta_path.open("r", encoding="utf-8") as handle:
-            loaded = json.load(handle)
-            if isinstance(loaded, dict):
-                existing_meta = loaded
-
-    merged_meta: Dict[str, Any] = {
-        "run_id": sanitized_run_id,
-        "created_at_utc": existing_meta.get("created_at_utc", _utc_now()),
-        "updated_at_utc": _utc_now(),
-    }
-    merged_meta.update(existing_meta)
-    if meta:
-        merged_meta.update(meta)
-
-    with meta_path.open("w", encoding="utf-8") as handle:
-        json.dump(merged_meta, handle, indent=2, ensure_ascii=False)
-
-    return {
-        "run_id": sanitized_run_id,
-        "memory_dir": str(run_dir),
-        "meta_path": str(meta_path),
-        "channels": created_files,
-    }
-
-
-def memory_append(run_id: str, channel: str, record: Dict[str, Any]) -> Dict[str, Any]:
-    if not isinstance(record, dict):
-        raise ValueError("record must be a JSON object")
-
     resolved_run_id = sanitize_run_id(run_id)
-    memory_init(resolved_run_id)
+    result = _memory_store().init(resolved_run_id, {"run_id": resolved_run_id, **(meta or {})})
+    result.pop("scope")
+    return {"run_id": resolved_run_id, **result, "channels": list(CHANNELS)}
 
-    entry = {
-        "timestamp_utc": _utc_now(),
-        "channel": channel,
-        "record": record,
-    }
-    target = _channel_path(resolved_run_id, channel)
-    _append_jsonl(target, entry)
 
-    if channel != "events":
-        _append_jsonl(
-            _channel_path(resolved_run_id, "events"),
-            {
-                "timestamp_utc": _utc_now(),
-                "event_type": "memory_append",
-                "channel": channel,
-            },
-        )
-
+def memory_append(
+    run_id: str,
+    channel: str,
+    record: Dict[str, Any],
+    metadata: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    _validate_channel(channel)
+    resolved_run_id = sanitize_run_id(run_id)
+    node = _memory_store().append(resolved_run_id, channel, record, metadata=metadata)
     return {
         "status": "ok",
         "run_id": resolved_run_id,
         "channel": channel,
-        "path": str(target),
-        "entry": entry,
+        "path": str(_run_dir(resolved_run_id).resolve() / "graph.json"),
+        "entry": {
+            "timestamp_utc": node["time"],
+            "channel": node["channel"],
+            "record": node["content"],
+        },
+        "node_id": node["id"],
     }
 
 
@@ -208,34 +146,43 @@ def memory_query(
     limit: int = 100,
     reverse: bool = True,
 ) -> Dict[str, Any]:
-    if limit <= 0:
-        raise ValueError("limit must be > 0")
-
+    _validate_channel(channel)
     resolved_run_id = sanitize_run_id(run_id)
-    path = _channel_path(resolved_run_id, channel)
-    items = list(_iter_jsonl(path))
+    result = _memory_store().query(
+        resolved_run_id, channel, filters=filters, contains=contains, limit=limit, reverse=reverse,
+    )
+    result.pop("scope")
+    return {"run_id": resolved_run_id, **result}
 
-    if filters:
-        filtered: List[Dict[str, Any]] = []
-        for item in items:
-            if all(item.get(key) == value for key, value in filters.items()):
-                filtered.append(item)
-        items = filtered
 
-    if contains:
-        needle = contains.lower()
-        items = [item for item in items if needle in json.dumps(item, ensure_ascii=False).lower()]
+def memory_search(
+    run_id: str,
+    query: str,
+    channels: Optional[List[str]] = None,
+    limit_per_channel: int = 10,
+    top_k: int = 10,
+) -> Dict[str, Any]:
+    resolved_run_id = sanitize_run_id(run_id)
+    search_channels = [name for name in CHANNELS if name != "events"] if channels is None else channels
+    for channel in search_channels:
+        _validate_channel(channel)
+    result = _memory_store().search(
+        resolved_run_id, query, channels=search_channels,
+        top_k=top_k, limit_per_channel=limit_per_channel,
+    )
+    result.pop("scope")
+    return {"run_id": resolved_run_id, **result}
 
-    if reverse:
-        items = list(reversed(items))
 
-    items = items[:limit]
-    return {
-        "run_id": resolved_run_id,
-        "channel": channel,
-        "count": len(items),
-        "items": items,
-    }
+def memory_get(
+    run_id: str,
+    node_ids: List[str],
+    include_dependencies: bool = True,
+) -> Dict[str, Any]:
+    resolved_run_id = sanitize_run_id(run_id)
+    result = _memory_store().get(resolved_run_id, node_ids, include_dependencies=include_dependencies)
+    result.pop("scope")
+    return {"run_id": resolved_run_id, **result}
 
 
 def _load_schema() -> Dict[str, Any]:
@@ -343,8 +290,13 @@ def build_mcp_app() -> Optional[Any]:
         return memory_init(run_id=run_id, meta=meta)
 
     @app.tool(name="memory_append")
-    def _tool_memory_append(run_id: str, channel: str, record: Dict[str, Any]) -> Dict[str, Any]:
-        return memory_append(run_id=run_id, channel=channel, record=record)
+    def _tool_memory_append(
+        run_id: str,
+        channel: str,
+        record: Dict[str, Any],
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        return memory_append(run_id=run_id, channel=channel, record=record, metadata=metadata)
 
     @app.tool(name="memory_query")
     def _tool_memory_query(
@@ -363,6 +315,27 @@ def build_mcp_app() -> Optional[Any]:
             limit=limit,
             reverse=reverse,
         )
+
+    @app.tool(name="memory_search")
+    def _tool_memory_search(
+        run_id: str,
+        query: str,
+        channels: Optional[List[str]] = None,
+        limit_per_channel: int = 10,
+        top_k: int = 10,
+    ) -> Dict[str, Any]:
+        return memory_search(
+            run_id=run_id, query=query, channels=channels,
+            limit_per_channel=limit_per_channel, top_k=top_k,
+        )
+
+    @app.tool(name="memory_get")
+    def _tool_memory_get(
+        run_id: str,
+        node_ids: List[str],
+        include_dependencies: bool = True,
+    ) -> Dict[str, Any]:
+        return memory_get(run_id=run_id, node_ids=node_ids, include_dependencies=include_dependencies)
 
     @app.tool(name="validate_verification_output")
     def _tool_validate_verification_output(payload: Dict[str, Any]) -> Dict[str, Any]:

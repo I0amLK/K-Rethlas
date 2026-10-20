@@ -10,6 +10,7 @@ htmlcov/
 
 # Virtual environments
 .venv/
+/.venv-memory/
 venv/
 env/
 
@@ -30,6 +31,7 @@ Thumbs.db
 *.pfx
 
 # Agent runtime artifacts
+agents/.embedding-api.lock
 agents/generation/logs/
 agents/generation/memory/
 agents/generation/results/

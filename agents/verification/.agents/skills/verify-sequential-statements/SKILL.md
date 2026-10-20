@@ -19,7 +19,7 @@ Do not split the proof with utility code. Read the markdown in order and use its
 
 ## Procedure
 
-1. Extract the assumptions and hypotheses from `Statement` before checking the proof.
+1. Extract the assumptions and hypotheses from `Statement` before checking the proof. If reusing checks from this run, locate them with `memory_search(run_id, query, channels=["statement_checks", "failed_checks"], top_k=10)` and retrieve useful IDs with `memory_get(run_id, node_ids=[...], include_dependencies=true)`. Read complete content, conditions, sources, and direct dependencies; similarity or a summary is not a correctness check.
 2. Iterate through the statements/subproofs in the order they appear in the markdown.
 3. For each item, determine a location key:
    - use the displayed theorem/lemma/claim heading if present,
@@ -64,3 +64,5 @@ Append records to `statement_checks` with structure like:
 
 - `memory_append`
 - `memory_query`
+- `memory_search`
+- `memory_get`

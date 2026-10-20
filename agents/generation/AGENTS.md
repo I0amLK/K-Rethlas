@@ -42,15 +42,16 @@ Reference directories are problem-specific. For `data/algebra/modrep.md`, the as
 
 ## Required Memory Policy
 
-All intermediate reasoning artifacts must be persisted in `memory/{problem_id}/` using MCP tools (`memory_init`, `memory_append`, `memory_search`, `branch_update`).
+All intermediate reasoning artifacts must be persisted using MCP tools (`memory_init`, `memory_append`, `memory_search`, `memory_get`, `branch_update`). `memory/{problem_id}/graph.json` is the only memory source of truth: it contains metadata, complete original records as nodes, and explicit edges. `index.json` is a disposable dense-vector cache, not evidence. Do not split memory into per-channel files or separate metadata files.
 
 Initialize memory before any reasoning:
 
 - call `memory_init(problem_id=problem_id, meta=...)`
+- search existing memory for the current goal, conditions, failed paths, and branch state; then call `memory_get(problem_id, node_ids=[...], include_dependencies=true)` on useful result IDs before relying on them
 
-For MCP memory tools, use the same data-relative `problem_id`.
+For MCP memory tools, use the same data-relative `problem_id`. Retrieval stays inside this generation problem; it does not search verification runs or other problems.
 
-Use append-only channels (except `meta.json`):
+Use these logical channels in the graph (append records; update branch status through `branch_update`):
 
 - `immediate_conclusions`
 - `toy_examples`
@@ -62,6 +63,31 @@ Use append-only channels (except `meta.json`):
 - `verification_reports`
 - `branch_states`
 - `events`
+
+`memory_search(problem_id, query, channels=..., limit_per_channel=10, top_k=10)` returns a flat `results` list of node IDs, scores, summaries, conditions, sources, statuses, relations, and inclusion reasons. It ranks full-record embeddings and expands explicit graph context up to two hops, at most 20 nodes. Channel limits select semantic seeds; linked context can come from other channels of this same problem. Summaries and similarity are not mathematical evidence: use `memory_get` for complete `content`, conditions, sources, and one-hop `direct_dependencies` before applying any result.
+
+Retain the `node_id` returned by append and use optional `metadata` for explicit source, conditions, branch/status, and relations. For example, after saving a supporting node as `support_id`, append a derived step with:
+
+```text
+memory_append(
+    problem_id=problem_id,
+    channel="proof_steps",
+    record={"statement": "...", "proof": "Complete argument, not an excerpt"},
+    metadata={
+        "type": "lemma",
+        "source": {"path": "data/example.refs/note.md", "location": "Lemma 2"},
+        "conditions": ["All hypotheses required for this step"],
+        "branch": "plan_a",
+        "relations": [{"type": "requires", "target_id": support_id}]
+    }
+)
+```
+
+Only record justified `requires`, `contrasts`, `refuted_by`, and `supersedes` edges. Similarity does not create a relation; a revision is a new node with an explicit relation rather than overwriting content. Branch status updates do not establish mathematical validity. Initialization, append, get, and branch updates do not call the embedding API. At the start of every new, continued, or resumed turn, search/get relevant memory; before ending, save progress, sources, failed attempts, and branch state.
+
+## Shared Concurrency Budget
+
+The shared hard cap is three active model tasks total, including the main task, all sub-agents, and verifier/model work. Check the currently allocated budget before launching anything; while the main task is active there can be at most two other tasks, fewer when another task already occupies a slot. Process decomposition plans in batches or serially rather than spawning all plans at once. Sub-agents must not spawn nested tasks unless the coordinator has explicitly allocated available budget; the configured depth limit is one. Wait for occupied slots to finish before launching verification or more work. All plan agents use this same `problem_id` and may append complete records and justified relations using known node IDs.
 
 ## Adaptive Control Loop
 
@@ -117,7 +143,7 @@ Do not decide a fixed order of skill usage before tackling the problem. Choose s
 - Use `$recursive-proving` when:
   - all current decomposition plans have been attempted with `$direct-proving`
   - none of them fully solved the problem
-  - you have identified key stuck points for each plan and want one sub-agent to work on each plan in parallel
+  - you have identified key stuck points for each plan and want plan agents to work in batches within the shared concurrency budget
 - Use `$identify-key-failures` when:
   - all current decomposition plans have failed with `$direct-proving`
   - recursive attempts on the current decomposition plans all failed
@@ -189,6 +215,7 @@ Use these tools when relevant:
 - `memory_init`
 - `memory_append`
 - `memory_search`
+- `memory_get`
 - `branch_update`
 - `verify_proof_service`
 

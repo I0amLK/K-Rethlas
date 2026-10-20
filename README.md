@@ -1,5 +1,7 @@
 # Rethlas
 
+This fork is based on [frenzymath/Rethlas](https://github.com/frenzymath/Rethlas).
+
 Rethlas is a natural-language reasoning system for mathematics built around two Codex agents:
 
 - The generation agent reads a math problem from a markdown file and writes an informal proof blueprint.
@@ -32,11 +34,30 @@ npm install -g @openai/codex
 ## 2. Clone the Repository
 
 ```bash
-git clone https://github.com/frenzymath/Rethlas.git
-cd Rethlas
+git clone https://github.com/I0amLK/K-Rethlas.git
+cd K-Rethlas
 ```
 
 ## 3. Start the Verification Service
+
+### Configure embedding memory before starting either role
+
+Set these variables in the launching session for both the verification service and generation runner (repeat the exports in each terminal if they are separate):
+
+```bash
+export RETHLAS_EMBEDDING_API_KEY="<your SiliconFlow API key>"
+# Alternatively, instead of RETHLAS_EMBEDDING_API_KEY:
+# export RETHLAS_EMBEDDING_KEY_FILE="/absolute/path/you/explicitly/choose/embedding.env"
+# That file contains: SILICONFLOW_API_KEY=<your key>
+# Optional endpoint override (model remains BAAI/bge-m3):
+# export RETHLAS_EMBEDDING_ENDPOINT="https://api.siliconflow.cn/v1/embeddings"
+```
+
+Both roles' MCP processes inherit the variables from their launching session. Configure them once before following the existing service/runner steps below; there is no per-call confirmation. A memory search sends the current role's problem/run-scope full record text and query to the configured embedding endpoint. The first retrieval encodes the saved records; later retrievals reuse record vectors in `index.json` and encode the query. Newly appended records are encoded on the next retrieval. Initialization, append, get, channel query, branch updates, and verification-output writes do not call the embedding API. Exceptions propagate as-is in this phase; no retries or fallback are added.
+
+Generation stores `agents/generation/memory/<problem_id>/graph.json`; verification stores `agents/verification/memory/<run_id>/graph.json`. Each graph is the sole source for metadata, complete records, and explicit relations. The sibling `index.json` is only a disposable, rebuildable BAAI/bge-m3 dense-vector cache. The two roles keep their memory isolated and share `agents/.embedding-api.lock` to serialize embedding API requests. There is no old-memory migration.
+
+`memory_search` returns a flat `results` list of IDs, summaries, scores, conditions, sources, statuses, relations, and inclusion reasons, with up to two-hop graph context and at most 20 nodes. Use `memory_get(problem_id=..., node_ids=[...], include_dependencies=true)` in generation (or `run_id=...` in verification) to read full records and direct dependencies before using them. Similarity is not a mathematical dependency or verification verdict. Verification also retains `memory_query` for complete channel review.
 
 
 ```bash

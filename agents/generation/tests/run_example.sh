@@ -230,7 +230,7 @@ for ((iter = next_iter; iter < end_iter; iter += 1)); do
   echo "Starting iter=$iter -> $log_file"
 
   if [[ "$started_fresh" -eq 1 && "$iter" -eq 0 ]]; then
-    prompt="Use AGENTS.md exactly to solve the math problem in ${PROBLEM_FILE}. Use problem_id=${problem_rel}. ${ref_prompt}"
+    prompt="Use AGENTS.md exactly to solve the math problem in ${PROBLEM_FILE}. Use problem_id=${problem_rel}. ${ref_prompt} Initialize memory, then use memory_search and memory_get to read relevant full records, conditions, sources, and direct dependencies before reasoning. Before ending this turn, save complete progress, failed paths, sources, justified relations, and branch state to graph memory."
 
     if (
       cd "$ROOT_DIR"
@@ -260,18 +260,16 @@ for ((iter = next_iter; iter < end_iter; iter += 1)); do
     if ((iter % 2 == 1)); then
       web_mode="disabled"
       if [[ "$started_fresh" -eq 1 ]]; then
-        prompt="Please continue. Do not use search tools like arxiv theorem search or web search. Please think deeply by yourself.
-"
+        prompt="Please continue with problem_id=${problem_rel}. First use memory_search and memory_get for full relevant records, conditions, sources, and direct dependencies. Do not use external search tools like arXiv theorem search or web search; local memory retrieval is allowed. Please think deeply by yourself. Before ending, save complete progress, failures, sources, justified relations, and branch state to graph memory."
       else
-        prompt="Please continue from the persisted memory and working draft. Follow AGENTS.md exactly. Do not use search tools like arXiv theorem search or web search during this turn; think deeply by yourself."
+        prompt="Please continue from the persisted memory and working draft with problem_id=${problem_rel}. Follow AGENTS.md exactly. First use memory_search and memory_get to recover full relevant records, conditions, sources, and direct dependencies. Do not use external search tools like arXiv theorem search or web search during this turn; local memory retrieval is allowed. Think deeply by yourself. Before ending, save complete progress, failures, sources, justified relations, and branch state to graph memory."
       fi
     else
       web_mode="live"
       if [[ "$started_fresh" -eq 1 ]]; then
-        prompt="Please continue. You may now use search tools, such as arXiv theorem search and web search, during your reasoning, but please also think deeply by yourself.
-"
+        prompt="Please continue with problem_id=${problem_rel}. First use memory_search and memory_get for full relevant records, conditions, sources, and direct dependencies. You may now use search tools, such as arXiv theorem search and web search, during your reasoning, but please also think deeply by yourself. Before ending, save complete progress, failures, sources, justified relations, and branch state to graph memory."
       else
-        prompt="Please continue from the persisted memory and working draft. Follow AGENTS.md exactly. You may use search tools, such as arXiv theorem search and web search, during this turn, but also think deeply by yourself."
+        prompt="Please continue from the persisted memory and working draft with problem_id=${problem_rel}. Follow AGENTS.md exactly. First use memory_search and memory_get to recover full relevant records, conditions, sources, and direct dependencies. You may use search tools, such as arXiv theorem search and web search, during this turn, but also think deeply by yourself. Before ending, save complete progress, failures, sources, justified relations, and branch state to graph memory."
       fi
     fi
 

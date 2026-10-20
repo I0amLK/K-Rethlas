@@ -54,6 +54,22 @@ Then persist artifacts in channels:
 
 Every detected issue must be persisted before final verdict.
 
+`memory/{run_id}/graph.json` is the only memory source of truth, holding metadata, complete original records, and explicit edges. `index.json` is a disposable dense-vector cache. Do not create separate per-channel memory or metadata files. This memory is isolated to the current verification run; do not search generation memory or other runs.
+
+Use `memory_search(run_id, query, channels=..., limit_per_channel=10, top_k=10)` to locate relevant prior checks. Its flat `results` list contains IDs, scores, summaries, conditions, sources, statuses, relations, and inclusion reasons. Before using a hit, call `memory_get(run_id, node_ids=[...], include_dependencies=true)` and inspect full `nodes[].content`, all conditions, sources, and `direct_dependencies`. Semantic similarity is not a proof or a dependency.
+
+Keep `memory_query(run_id, channel, filters=..., contains=..., limit=100, reverse=true)` for complete channel review. It returns `items` with `timestamp_utc`, `channel`, and `record`; `filters` matches those envelope keys, not nested record fields. Choose a limit large enough to collect every finding in the current run, and do not replace that complete collection with semantic top hits.
+
+`memory_append` accepts optional `metadata` for `type`, `source`, `conditions`, `branch`, `status`, and explicit `relations=[{"type": "requires", "target_id": "<existing node_id>"}]`. Use only `requires`, `contrasts`, `refuted_by`, or `supersedes` when justified; retain returned `node_id` references. At the start of a new, continued, or resumed turn, search/get relevant checks from this run. Save each new check and issue, and save progress before ending a turn. Initialization, append, get, query, and final-output writing do not call the embedding API.
+
+## Memory Tools
+
+- `memory_init`
+- `memory_append`
+- `memory_query`
+- `memory_search`
+- `memory_get`
+
 ## Verification Workflow
 
 ### Step 1: Initialize run context

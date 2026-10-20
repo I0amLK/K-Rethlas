@@ -1,14 +1,15 @@
 from __future__ import annotations
 
-import json
-import math
 import re
-from collections import Counter
-from datetime import datetime, timezone
+import sys
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, List, Optional
 
 import requests
+
+AGENTS_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(AGENTS_ROOT))
+from memory_graph import MemoryGraph
 
 try:
     from fastmcp import FastMCP
@@ -26,22 +27,22 @@ THEOREM_SEARCH_TASK = (
 
 VERIFY_PROOF_URL = "http://127.0.0.1:8091/verify"
 
-CHANNEL_FILES: Dict[str, str] = {
-    "immediate_conclusions": "immediate_conclusions.jsonl",
-    "toy_examples": "toy_examples.jsonl",
-    "counterexamples": "counterexamples.jsonl",
-    "big_decisions": "big_decisions.jsonl",
-    "subgoals": "subgoals.jsonl",
-    "proof_steps": "proof_steps.jsonl",
-    "failed_paths": "failed_paths.jsonl",
-    "verification_reports": "verification_reports.jsonl",
-    "branch_states": "branch_states.jsonl",
-    "events": "events.jsonl",
-}
+CHANNELS = (
+    "immediate_conclusions",
+    "toy_examples",
+    "counterexamples",
+    "big_decisions",
+    "subgoals",
+    "proof_steps",
+    "failed_paths",
+    "verification_reports",
+    "branch_states",
+    "events",
+)
 
 
-def _utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+def _memory_store() -> MemoryGraph:
+    return MemoryGraph(MEMORY_ROOT, api_lock_path=AGENTS_ROOT / ".embedding-api.lock")
 
 
 def _sanitize_problem_component(raw: str) -> str:
@@ -86,77 +87,27 @@ def _problem_dir(problem_id: str) -> Path:
     return problem_dir
 
 
-def _channel_path(problem_id: str, channel: str) -> Path:
-    if channel not in CHANNEL_FILES:
-        allowed = ", ".join(sorted(CHANNEL_FILES))
+def _validate_channel(channel: str) -> None:
+    if channel not in CHANNELS:
+        allowed = ", ".join(sorted(CHANNELS))
         raise ValueError(f"Unknown channel '{channel}'. Allowed channels: {allowed}")
-    return _problem_dir(problem_id) / CHANNEL_FILES[channel]
 
 
-def _iter_jsonl(path: Path) -> Iterable[Dict[str, Any]]:
-    if not path.exists():
-        return
-    with path.open("r", encoding="utf-8") as handle:
-        for line in handle:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                payload = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if isinstance(payload, dict):
-                yield payload
+def _append_result(problem_id: str, node: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "status": "ok",
+        "problem_id": problem_id,
+        "channel": node["channel"],
+        "path": str(_problem_dir(problem_id) / "graph.json"),
+        "entry": {
+            "timestamp_utc": node["time"],
+            "channel": node["channel"],
+            "record": node["content"],
+        },
+        "node_id": node["id"],
+    }
 
 
-def _append_jsonl(path: Path, payload: Dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8") as handle:
-        handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
-
-
-def _tokenize_bm25(text: str) -> List[str]:
-    return re.findall(r"[A-Za-z0-9_]+", text.lower())
-
-
-def _bm25_score_documents(
-    query: str,
-    documents: List[List[str]],
-    *,
-    k1: float = 1.5,
-    b: float = 0.75,
-) -> List[float]:
-    query_tokens = _tokenize_bm25(query)
-    if not query_tokens or not documents:
-        return [0.0 for _ in documents]
-
-    query_term_counts = Counter(query_tokens)
-    document_frequencies: Counter[str] = Counter()
-    document_term_counts = [Counter(document) for document in documents]
-    document_lengths = [len(document) for document in documents]
-    avg_doc_length = sum(document_lengths) / len(document_lengths) if document_lengths else 0.0
-    total_documents = len(documents)
-
-    for document in documents:
-        for token in set(document):
-            document_frequencies[token] += 1
-
-    scores: List[float] = []
-    for doc_counts, doc_length in zip(document_term_counts, document_lengths):
-        score = 0.0
-        norm = k1 * (1.0 - b + b * (doc_length / avg_doc_length)) if avg_doc_length > 0 else k1
-        for token, query_tf in query_term_counts.items():
-            term_frequency = doc_counts.get(token, 0)
-            if term_frequency <= 0:
-                continue
-            document_frequency = document_frequencies.get(token, 0)
-            idf = math.log(1.0 + ((total_documents - document_frequency + 0.5) / (document_frequency + 0.5)))
-            numerator = term_frequency * (k1 + 1.0)
-            denominator = term_frequency + norm
-            score += query_tf * idf * (numerator / denominator)
-        scores.append(score)
-
-    return scores
 def search_arxiv_theorems(
     query: str,
     num_results: int = 10,
@@ -244,76 +195,22 @@ def memory_init(
     problem_id: str,
     meta: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    sanitized_problem_id = sanitize_problem_id(problem_id)
-    problem_dir = _problem_dir(sanitized_problem_id)
-    problem_dir.mkdir(parents=True, exist_ok=True)
-
-    created_files: Dict[str, str] = {}
-    for channel, filename in CHANNEL_FILES.items():
-        channel_path = problem_dir / filename
-        channel_path.touch(exist_ok=True)
-        created_files[channel] = str(channel_path)
-
-    meta_path = problem_dir / "meta.json"
-    existing_meta: Dict[str, Any] = {}
-    if meta_path.exists() and meta_path.stat().st_size > 0:
-        with meta_path.open("r", encoding="utf-8") as handle:
-            loaded = json.load(handle)
-            if isinstance(loaded, dict):
-                existing_meta = loaded
-
-    merged_meta: Dict[str, Any] = {
-        "problem_id": sanitized_problem_id,
-        "created_at_utc": existing_meta.get("created_at_utc", _utc_now()),
-        "updated_at_utc": _utc_now(),
-    }
-    merged_meta.update(existing_meta)
-    if meta:
-        merged_meta.update(meta)
-
-    with meta_path.open("w", encoding="utf-8") as handle:
-        json.dump(merged_meta, handle, indent=2, ensure_ascii=False)
-
-    return {
-        "problem_id": sanitized_problem_id,
-        "memory_dir": str(problem_dir),
-        "meta_path": str(meta_path),
-        "channels": created_files,
-    }
+    resolved_problem_id = sanitize_problem_id(problem_id)
+    result = _memory_store().init(resolved_problem_id, {"problem_id": resolved_problem_id, **(meta or {})})
+    result.pop("scope")
+    return {"problem_id": resolved_problem_id, **result, "channels": list(CHANNELS)}
 
 
 def memory_append(
     problem_id: str,
     channel: str,
     record: Dict[str, Any],
+    metadata: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    if not isinstance(record, dict):
-        raise ValueError("record must be a JSON object")
-
-    memory_init(problem_id)
-
-    entry = {
-        "timestamp_utc": _utc_now(),
-        "channel": channel,
-        "record": record,
-    }
-    target = _channel_path(problem_id, channel)
-    _append_jsonl(target, entry)
-
-    if channel != "events":
-        event_entry = {
-            "timestamp_utc": _utc_now(),
-            "event_type": "memory_append",
-            "channel": channel,
-        }
-        _append_jsonl(_channel_path(problem_id, "events"), event_entry)
-
-    return {
-        "status": "ok",
-        "channel": channel,
-        "path": str(target),
-        "entry": entry,
-    }
+    _validate_channel(channel)
+    resolved_problem_id = sanitize_problem_id(problem_id)
+    node = _memory_store().append(resolved_problem_id, channel, record, metadata=metadata)
+    return _append_result(resolved_problem_id, node)
 
 
 def memory_search(
@@ -321,59 +218,29 @@ def memory_search(
     query: str,
     channels: Optional[List[str]] = None,
     limit_per_channel: int = 10,
+    top_k: int = 10,
 ) -> Dict[str, Any]:
-    if not query.strip():
-        raise ValueError("query must be non-empty")
-    if limit_per_channel <= 0:
-        raise ValueError("limit_per_channel must be > 0")
-
-    if channels is None:
-        search_channels = [name for name in CHANNEL_FILES if name != "events"]
-    else:
-        search_channels = channels
-
-    results_by_channel: Dict[str, Dict[str, Any]] = {}
-    total_results = 0
+    resolved_problem_id = sanitize_problem_id(problem_id)
+    search_channels = [name for name in CHANNELS if name != "events"] if channels is None else channels
     for channel in search_channels:
-        path = _channel_path(problem_id, channel)
-        items = list(_iter_jsonl(path))
-        documents = [json.dumps(item, ensure_ascii=False) for item in items]
-        tokenized_documents = [_tokenize_bm25(document) for document in documents]
-        scores = _bm25_score_documents(query, tokenized_documents)
+        _validate_channel(channel)
+    result = _memory_store().search(
+        resolved_problem_id, query, channels=search_channels,
+        top_k=top_k, limit_per_channel=limit_per_channel,
+    )
+    result.pop("scope")
+    return {"problem_id": resolved_problem_id, **result}
 
-        ranked_results: List[Dict[str, Any]] = []
-        for item, score in sorted(
-            zip(items, scores),
-            key=lambda pair: (
-                -pair[1],
-                pair[0].get("timestamp_utc", ""),
-            ),
-        ):
-            if score <= 0:
-                continue
-            ranked_results.append(
-                {
-                    "score": score,
-                    "item": item,
-                }
-            )
-            if len(ranked_results) >= limit_per_channel:
-                break
 
-        results_by_channel[channel] = {
-            "count": len(ranked_results),
-            "results": ranked_results,
-        }
-        total_results += len(ranked_results)
-
-    return {
-        "problem_id": sanitize_problem_id(problem_id),
-        "query": query,
-        "channels": search_channels,
-        "limit_per_channel": limit_per_channel,
-        "count": total_results,
-        "results_by_channel": results_by_channel,
-    }
+def memory_get(
+    problem_id: str,
+    node_ids: List[str],
+    include_dependencies: bool = True,
+) -> Dict[str, Any]:
+    resolved_problem_id = sanitize_problem_id(problem_id)
+    result = _memory_store().get(resolved_problem_id, node_ids, include_dependencies=include_dependencies)
+    result.pop("scope")
+    return {"problem_id": resolved_problem_id, **result}
 
 
 def branch_update(
@@ -381,11 +248,9 @@ def branch_update(
     branch_id: str,
     state: Dict[str, Any],
 ) -> Dict[str, Any]:
-    payload = {
-        "branch_id": branch_id,
-        "state": state,
-    }
-    return memory_append(problem_id, "branch_states", payload)
+    resolved_problem_id = sanitize_problem_id(problem_id)
+    node = _memory_store().branch_update(resolved_problem_id, branch_id, state)
+    return _append_result(resolved_problem_id, node)
 
 
 def build_mcp_app() -> Optional[Any]:
@@ -420,8 +285,9 @@ def build_mcp_app() -> Optional[Any]:
         problem_id: str,
         channel: str,
         record: Dict[str, Any],
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        return memory_append(problem_id=problem_id, channel=channel, record=record)
+        return memory_append(problem_id=problem_id, channel=channel, record=record, metadata=metadata)
 
     @app.tool(name="memory_search")
     def _tool_memory_search(
@@ -429,12 +295,24 @@ def build_mcp_app() -> Optional[Any]:
         query: str,
         channels: Optional[List[str]] = None,
         limit_per_channel: int = 10,
+        top_k: int = 10,
     ) -> Dict[str, Any]:
         return memory_search(
             problem_id=problem_id,
             query=query,
             channels=channels,
             limit_per_channel=limit_per_channel,
+            top_k=top_k,
+        )
+
+    @app.tool(name="memory_get")
+    def _tool_memory_get(
+        problem_id: str,
+        node_ids: List[str],
+        include_dependencies: bool = True,
+    ) -> Dict[str, Any]:
+        return memory_get(
+            problem_id=problem_id, node_ids=node_ids, include_dependencies=include_dependencies,
         )
 
     @app.tool(name="branch_update")

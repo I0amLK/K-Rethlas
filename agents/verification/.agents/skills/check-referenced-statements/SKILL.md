@@ -7,6 +7,8 @@ description: Validate externally referenced theorems by querying arXiv theorem s
 
 Validate every external-paper reference used in the proof.
 
+When consulting earlier reference checks in the same run, use `memory_search(run_id, query, channels=["reference_checks"], top_k=10)` and then `memory_get(run_id, node_ids=[...], include_dependencies=true)`. Read full content, exact hypotheses, sources, and direct dependencies before reuse; a semantic match is not confirmation of a citation. Persist new checks with source/conditions metadata and justified relations to known node IDs.
+
 ## Input Contract
 
 For each cited external theorem/lemma/definition:
@@ -59,4 +61,6 @@ Append records to `reference_checks` like:
 
 - `search_arxiv_theorems`
 - `memory_append`
+- `memory_search`
+- `memory_get`
 - Codex's built-in web search

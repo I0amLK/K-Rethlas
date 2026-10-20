@@ -18,7 +18,7 @@ Each issue must include `location` and `issue`.
 
 ## Procedure
 
-1. Collect all critical errors and all gaps from previous checks.
+1. Collect all critical errors and all gaps from previous checks using `memory_query(run_id, channel, limit=..., reverse=false)` for both `statement_checks` and `reference_checks`, with a limit large enough to include every record in this run. Findings are in `items[].record`; filters match envelope keys, not nested fields. Do not substitute semantic top hits for complete collection. For targeted context, `memory_search` returns flat `results` IDs; use `memory_get(run_id, node_ids=[...], include_dependencies=true)` to read full content, conditions, sources, and direct dependencies before relying on them.
 2. Build a complete `verification_report` object with:
    - `summary`
    - `critical_errors`
@@ -51,6 +51,8 @@ If there is any error or gap, verdict must be `"wrong"` and `repair_hints` must 
 ## MCP Tools
 
 - `memory_query`
+- `memory_search`
+- `memory_get`
 - `memory_append`
 - `validate_verification_output`
 - `write_verification_output`
