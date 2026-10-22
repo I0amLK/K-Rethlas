@@ -42,7 +42,7 @@ Reference directories are problem-specific. For `data/algebra/modrep.md`, the as
 
 ## Required Memory Policy
 
-All intermediate reasoning artifacts must be persisted using MCP tools (`memory_init`, `memory_append`, `memory_search`, `memory_get`, `branch_update`). `memory/{problem_id}/graph.json` is the only memory source of truth: it contains metadata, complete original records as nodes, and explicit edges. `index.json` is a disposable dense-vector cache, not evidence. Do not split memory into per-channel files or separate metadata files.
+All intermediate reasoning artifacts must be persisted using MCP tools (`memory_init`, `memory_append`, `memory_search`, `memory_get`, `branch_update`). `memory/{problem_id}/memory.sqlite3` is the memory source of truth: it contains metadata, complete original records as nodes, and explicit edges. Its `embeddings` table is a disposable dense-vector cache, not evidence. Do not edit the database directly or split memory into per-channel files. Existing JSON memories are imported once by the store and retained unchanged as historical backups, not current records. The `graph_path`/`path` fields point to SQLite; use memory tools rather than parsing that file. Use the documented SQLite backup command, not a copy of a live database without its WAL.
 
 Initialize memory before any reasoning:
 

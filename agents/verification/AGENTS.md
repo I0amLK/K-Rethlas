@@ -54,7 +54,7 @@ Then persist artifacts in channels:
 
 Every detected issue must be persisted before final verdict.
 
-`memory/{run_id}/graph.json` is the only memory source of truth, holding metadata, complete original records, and explicit edges. `index.json` is a disposable dense-vector cache. Do not create separate per-channel memory or metadata files. This memory is isolated to the current verification run; do not search generation memory or other runs.
+`memory/{run_id}/memory.sqlite3` is the memory source of truth, holding metadata, complete original records, and explicit edges. Its `embeddings` table is a disposable dense-vector cache. Do not edit the database directly or create separate per-channel memory files. Existing JSON memories are imported once and retained unchanged as historical backups, not current records. The `graph_path`/`path` fields point to SQLite; use memory tools rather than parsing that file. Use the documented SQLite backup command, not a copy of a live database without its WAL. This memory is isolated to the current verification run; do not search generation memory or other runs.
 
 Use `memory_search(run_id, query, channels=..., limit_per_channel=10, top_k=10)` to locate relevant prior checks. Its flat `results` list contains IDs, scores, summaries, conditions, sources, statuses, relations, and inclusion reasons. Before using a hit, call `memory_get(run_id, node_ids=[...], include_dependencies=true)` and inspect full `nodes[].content`, all conditions, sources, and `direct_dependencies`. Semantic similarity is not a proof or a dependency.
 

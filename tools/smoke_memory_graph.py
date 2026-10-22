@@ -10,6 +10,7 @@ from importlib import import_module, util
 import json
 from pathlib import Path
 import sys
+import sqlite3
 from tempfile import TemporaryDirectory
 
 
@@ -96,8 +97,10 @@ def main():
         assert full["count"] == 1 and len(full["direct_dependencies"]) == 1
         assert all(node["conditions"] == docs[node["id"]]["assumptions"] for node in nodes)
         assert all(node["source"] == docs[node["id"]]["path"] for node in nodes)
-        assert graph_path.with_name("index.json").is_file()
-        disk_graph = json.loads(graph_path.read_text(encoding="utf-8"))
+        assert graph_path.name == "memory.sqlite3" and graph_path.is_file()
+        with sqlite3.connect(graph_path) as db:
+            assert db.execute("SELECT COUNT(*) FROM embeddings").fetchone()[0] == 2
+        disk_graph = generation._memory_store().export_snapshot(problem)
         assert len(disk_graph["nodes"]) == 2 and disk_graph["edges"] == [
             {"source": "d02", "type": "requires", "target": "d01"}]
 

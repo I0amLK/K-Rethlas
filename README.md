@@ -53,9 +53,33 @@ export RETHLAS_EMBEDDING_API_KEY="<your SiliconFlow API key>"
 # export RETHLAS_EMBEDDING_ENDPOINT="https://api.siliconflow.cn/v1/embeddings"
 ```
 
-Both roles' MCP processes inherit the variables from their launching session. Configure them once before following the existing service/runner steps below; there is no per-call confirmation. A memory search sends the current role's problem/run-scope full record text and query to the configured embedding endpoint. The first retrieval encodes the saved records; later retrievals reuse record vectors in `index.json` and encode the query. Newly appended records are encoded on the next retrieval. Initialization, append, get, channel query, branch updates, and verification-output writes do not call the embedding API. Exceptions propagate as-is in this phase; no retries or fallback are added.
+Both roles' MCP processes inherit the variables from their launching session. Configure them once before following the existing service/runner steps below; there is no per-call confirmation. A memory search sends the current role's problem/run-scope full record text and query to the configured embedding endpoint. The first retrieval encodes the saved records; later retrievals reuse record vectors from SQLite and encode the query. Newly appended records are encoded on the next retrieval. Initialization, append, get, channel query, branch updates, and verification-output writes do not call the embedding API. Exceptions propagate as-is in this phase; no retries or fallback are added.
 
-Generation stores `agents/generation/memory/<problem_id>/graph.json`; verification stores `agents/verification/memory/<run_id>/graph.json`. Each graph is the sole source for metadata, complete records, and explicit relations. The sibling `index.json` is only a disposable, rebuildable BAAI/bge-m3 dense-vector cache. The two roles keep their memory isolated and share `agents/.embedding-api.lock` to serialize embedding API requests. There is no old-memory migration.
+Generation stores `agents/generation/memory/<problem_id>/memory.sqlite3`; verification stores `agents/verification/memory/<run_id>/memory.sqlite3`. Each scope's SQLite database is authoritative for metadata, complete records, and explicit relations. Nodes and edges are inserted transactionally; branch status changes and their history record commit together. Channel and branch lookups are indexed. The `embeddings` table is only a disposable, rebuildable BAAI/bge-m3 dense-vector cache (1024 float64 values per BLOB, preserving existing scores). It is updated per vector, not rewritten as a JSON file. Retrieval still calculates exact cosine similarities in Python; this is not an ANN index or a reranker. The two roles remain isolated and share `agents/.embedding-api.lock` to serialize embedding API requests. Network requests do not hold a database transaction.
+
+SQLite uses WAL, `synchronous=FULL`, and a 30-second lock timeout, with no extra Python dependency. Keep databases on a local filesystem; WAL is not supported for multi-host network-filesystem access. MCP tool arguments and result shapes remain the same; the existing `graph_path` and append `path` fields now point to `memory.sqlite3` rather than JSON. Treat that path as opaque and use MCP tools to read records, not a JSON parser.
+
+### Existing JSON memories and backups
+
+Stop all old-version MCP processes for the affected memory root before upgrading. First access to a scope imports its `graph.json` and compatible `index.json` in one transaction, preserving node IDs, insertion order, times, complete records, relations, and cached embeddings. Malformed authoritative graph data fails migration without a partial import. Invalid disposable vector caches emit a warning and are rebuilt on the next retrieval. Original JSON files are left unchanged as pre-migration backups and are never used again after a successful import; **do not run old and new storage versions against the same memory root**, or rely on legacy JSON as a current backup.
+
+Optional offline maintenance from the repository root (no embedding calls):
+
+```bash
+# Import one existing problem explicitly; otherwise first MCP access does this.
+python3 tools/memory_store.py --root agents/generation/memory --scope example migrate
+
+# Consistent backup of a live SQLite scope, including committed WAL contents.
+python3 tools/memory_store.py --root agents/generation/memory --scope example backup /path/to/new-backup.sqlite3
+
+# Human-readable graph export; this is a snapshot, not the live store.
+python3 tools/memory_store.py --root agents/generation/memory --scope example export /path/to/new-snapshot.json
+
+# Rebuild vectors on next search without deleting authoritative records.
+python3 tools/memory_store.py --root agents/generation/memory --scope example clear-index
+```
+
+Backup/export refuse to overwrite existing files. Do not copy only `memory.sqlite3` while it is in use: committed data can still be in `memory.sqlite3-wal`. Use the backup command above. A full database rollback requires stopping processes and restoring a consistent backup; retained JSON predates all post-migration writes. Regression tests: `python3 -m pytest -q tests` (requires pytest plus the existing MCP dependencies for integration tests).
 
 `memory_search` returns a flat `results` list of IDs, summaries, scores, conditions, sources, statuses, relations, and inclusion reasons, with up to two-hop graph context and at most 20 nodes. Use `memory_get(problem_id=..., node_ids=[...], include_dependencies=true)` in generation (or `run_id=...` in verification) to read full records and direct dependencies before using them. Similarity is not a mathematical dependency or verification verdict. Verification also retains `memory_query` for complete channel review.
 

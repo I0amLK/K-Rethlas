@@ -98,7 +98,7 @@ def _append_result(problem_id: str, node: Dict[str, Any]) -> Dict[str, Any]:
         "status": "ok",
         "problem_id": problem_id,
         "channel": node["channel"],
-        "path": str(_problem_dir(problem_id) / "graph.json"),
+        "path": str(_memory_store().database_path(problem_id)),
         "entry": {
             "timestamp_utc": node["time"],
             "channel": node["channel"],

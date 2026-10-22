@@ -128,7 +128,7 @@ def memory_append(
         "status": "ok",
         "run_id": resolved_run_id,
         "channel": channel,
-        "path": str(_run_dir(resolved_run_id).resolve() / "graph.json"),
+        "path": str(_memory_store().database_path(resolved_run_id)),
         "entry": {
             "timestamp_utc": node["time"],
             "channel": node["channel"],
